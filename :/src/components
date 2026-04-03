@@ -1,0 +1,103 @@
+// src/components/PropertyPanel.tsx
+import React from 'react';
+
+interface PropertyPanelProps {
+  stitchDensity: number;      // mm
+  stitchLength: number;       // mm
+  threadColor: string;        // hex color
+  onDensityChange: (value: number) => void;
+  onLengthChange: (value: number) => void;
+  onColorChange: (value: string) => void;
+}
+
+const PropertyPanel: React.FC<PropertyPanelProps> = ({
+  stitchDensity,
+  stitchLength,
+  threadColor,
+  onDensityChange,
+  onLengthChange,
+  onColorChange,
+}) => {
+  return (
+    <div style={{
+      width: 260,
+      backgroundColor: '#f8f9fa',
+      padding: '1rem',
+      borderLeft: '1px solid #ccc',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '1.5rem',
+      fontFamily: 'sans-serif'
+    }}>
+      <h3 style={{ margin: 0 }}>🪡 خصائص الغرزة</h3>
+
+      {/* Stitch Density */}
+      <div>
+        <label style={{ fontWeight: 'bold', display: 'block', marginBottom: 6 }}>
+          كثافة الغرزة (mm)
+        </label>
+        <input
+          type="number"
+          step={0.05}
+          min={0.1}
+          max={2.5}
+          value={stitchDensity}
+          onChange={(e) => onDensityChange(parseFloat(e.target.value) || 0.4)}
+          style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #aaa' }}
+        />
+        <p style={{ fontSize: 12, color: '#555', marginTop: 4 }}>المسافة بين الغرز (افتراضي 0.4 مم)</p>
+      </div>
+
+      {/* Stitch Length */}
+      <div>
+        <label style={{ fontWeight: 'bold', display: 'block', marginBottom: 6 }}>
+          طول الغرزة (mm)
+        </label>
+        <input
+          type="number"
+          step={0.1}
+          min={0.5}
+          max={5}
+          value={stitchLength}
+          onChange={(e) => onLengthChange(parseFloat(e.target.value) || 2.0)}
+          style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #aaa' }}
+        />
+        <p style={{ fontSize: 12, color: '#555', marginTop: 4 }}>طول كل غرزة (للغرزة الجارية)</p>
+      </div>
+
+      {/* Thread Color */}
+      <div>
+        <label style={{ fontWeight: 'bold', display: 'block', marginBottom: 6 }}>
+          لون الخيط
+        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <input
+            type="color"
+            value={threadColor}
+            onChange={(e) => onColorChange(e.target.value)}
+            style={{ width: 48, height: 48, border: 'none', cursor: 'pointer', borderRadius: 8 }}
+          />
+          <span style={{ fontFamily: 'monospace' }}>{threadColor}</span>
+        </div>
+        <div style={{
+          width: '100%',
+          height: 24,
+          backgroundColor: threadColor,
+          marginTop: 8,
+          borderRadius: 12,
+          border: '1px solid #ccc'
+        }} />
+      </div>
+
+      <hr />
+      <div style={{ fontSize: 12, color: '#2c3e50' }}>
+        <strong>💡 ملاحظة</strong><br />
+        • الكثافة تؤثر على غرز الساتان والجارية.<br />
+        • طول الغرزة يُستخدم للغرزة الجارية فقط حالياً.<br />
+        • يمكن لاحقاً تطبيق اللون على رسم الغرز.
+      </div>
+    </div>
+  );
+};
+
+export default PropertyPanel;
