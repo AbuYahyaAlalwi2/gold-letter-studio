@@ -2,11 +2,13 @@ export type StitchType = 'satin' | 'tatami' | 'run' | 'zigzag';
 
 export type ToolType =
   | 'select'
+  | 'reshape'
   | 'inputA'
   | 'inputB'
   | 'complexFill'
   | 'text'
-  | 'shapes';
+  | 'shapes'
+  | 'knife';
 
 export interface Point {
   x: number;

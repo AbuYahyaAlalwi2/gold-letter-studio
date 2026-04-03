@@ -14,6 +14,7 @@ function App() {
   const [paths, setPaths] = useState<StitchPath[]>([]);
   const [undoStack, setUndoStack] = useState<StitchPath[][]>([]);
   const [redoStack, setRedoStack] = useState<StitchPath[][]>([]);
+  const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(new Set());
 
   // Tool state
   const [activeTool, setActiveTool] = useState<ToolType>('inputA');
@@ -65,6 +66,44 @@ function App() {
     setRedoStack((prev) => prev.slice(0, -1));
   }, [redoStack, paths]);
 
+  // Reorder paths (drag-and-drop in stitch list)
+  const handleReorder = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      setUndoStack((prev) => [...prev, paths]);
+      setRedoStack([]);
+      setPaths((prev) => {
+        const updated = [...prev];
+        const [moved] = updated.splice(fromIndex, 1);
+        updated.splice(toIndex, 0, moved);
+        return updated;
+      });
+    },
+    [paths]
+  );
+
+  // Delete a path
+  const handleDeletePath = useCallback(
+    (pathId: string) => {
+      setUndoStack((prev) => [...prev, paths]);
+      setRedoStack([]);
+      setPaths((prev) => prev.filter((p) => p.id !== pathId));
+    },
+    [paths]
+  );
+
+  // Toggle visibility of a path
+  const handleToggleVisibility = useCallback((pathId: string) => {
+    setHiddenPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(pathId)) {
+        next.delete(pathId);
+      } else {
+        next.add(pathId);
+      }
+      return next;
+    });
+  }, []);
+
   // New design
   const handleNew = useCallback(() => {
     if (paths.length > 0) {
@@ -72,6 +111,7 @@ function App() {
       setRedoStack([]);
     }
     setPaths([]);
+    setHiddenPaths(new Set());
   }, [paths]);
 
   // Export JSON
@@ -153,6 +193,9 @@ function App() {
         case 'v':
           setActiveTool('select');
           break;
+        case 'r':
+          setActiveTool('reshape');
+          break;
         case 'a':
           setActiveTool('inputA');
           break;
@@ -167,6 +210,9 @@ function App() {
           break;
         case 's':
           setActiveTool('shapes');
+          break;
+        case 'k':
+          setActiveTool('knife');
           break;
       }
     };
@@ -213,6 +259,11 @@ function App() {
           onStitchWidthChange={setStitchWidth}
           selectedPathCount={0}
           totalPaths={paths.length}
+          paths={paths}
+          onReorder={handleReorder}
+          onDeletePath={handleDeletePath}
+          onToggleVisibility={handleToggleVisibility}
+          hiddenPaths={hiddenPaths}
         />
       </div>
       <ColorPalette activeColor={activeColor} onColorChange={setActiveColor} />

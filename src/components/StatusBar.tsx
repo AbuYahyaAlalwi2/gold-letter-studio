@@ -13,11 +13,13 @@ interface StatusBarProps {
 
 const toolLabels: Record<ToolType, string> = {
   select: 'Select',
-  inputA: 'Input A',
-  inputB: 'Input B (Freehand)',
-  complexFill: 'Complex Fill',
+  reshape: 'Reshape',
+  inputA: 'Input A (Satin)',
+  inputB: 'Input B (Run)',
+  complexFill: 'Complex Fill (Tatami)',
   text: 'Text',
   shapes: 'Shapes',
+  knife: 'Knife',
 };
 
 export default function StatusBar({

@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { Canvas as FabricCanvas, Line, Circle, Group, Rect, Polyline, PencilBrush, FabricObject } from 'fabric';
+import { Canvas as FabricCanvas, Line, Circle, Group, Rect, Polyline, PencilBrush, FabricObject, FabricText } from 'fabric';
 import { CanvasState, Point, StitchPath, ToolType, StitchType } from '../types/embroidery';
 import { convertPathToStitches, stitchPointsToSegments } from '../utils/stitch-converter';
 
@@ -27,15 +27,65 @@ const GRID_MINOR_MM = 5;
 
 let pathIdCounter = 0;
 
-/** Build the static grid group (design area, minor + major grid lines, border) */
-function buildGridGroup(): Group {
-  const objects: (Line | Rect)[] = [];
+const RULER_SIZE = 20; // px reserved for ruler labels outside design area
 
-  // Design area background
+/** Build the static grid group (design area, minor + major grid lines, border, mm rulers) */
+function buildGridGroup(): Group {
+  const objects: (Line | Rect | FabricText)[] = [];
+
+  // Ruler background strips (top and left)
+  objects.push(
+    new Rect({
+      left: RULER_SIZE,
+      top: 0,
+      width: DESIGN_W_PX,
+      height: RULER_SIZE,
+      fill: '#2a2a2a',
+      selectable: false,
+      evented: false,
+    })
+  );
+  objects.push(
+    new Rect({
+      left: 0,
+      top: RULER_SIZE,
+      width: RULER_SIZE,
+      height: DESIGN_H_PX,
+      fill: '#2a2a2a',
+      selectable: false,
+      evented: false,
+    })
+  );
+  // Corner square
   objects.push(
     new Rect({
       left: 0,
       top: 0,
+      width: RULER_SIZE,
+      height: RULER_SIZE,
+      fill: '#2a2a2a',
+      selectable: false,
+      evented: false,
+    })
+  );
+  // "mm" label in corner
+  objects.push(
+    new FabricText('mm', {
+      left: 1,
+      top: 4,
+      fontSize: 8,
+      fill: '#888',
+      fontFamily: 'monospace',
+      selectable: false,
+      evented: false,
+    })
+  );
+
+  // Design area background (offset by ruler size)
+  objects.push(
+    new Rect({
+      left: RULER_SIZE,
+      top: RULER_SIZE,
       width: DESIGN_W_PX,
       height: DESIGN_H_PX,
       fill: '#FFFFFF',
@@ -44,12 +94,21 @@ function buildGridGroup(): Group {
     })
   );
 
-  // Minor grid (5mm)
+  // Minor grid (5mm) — offset by ruler
   const minorStep = GRID_MINOR_MM * PX_PER_MM;
   for (let x = 0; x <= DESIGN_W_PX; x += minorStep) {
     objects.push(
-      new Line([x, 0, x, DESIGN_H_PX], {
+      new Line([RULER_SIZE + x, RULER_SIZE, RULER_SIZE + x, RULER_SIZE + DESIGN_H_PX], {
         stroke: '#F0F0F0',
+        strokeWidth: 0.5,
+        selectable: false,
+        evented: false,
+      })
+    );
+    // Minor tick on top ruler
+    objects.push(
+      new Line([RULER_SIZE + x, RULER_SIZE - 3, RULER_SIZE + x, RULER_SIZE], {
+        stroke: '#666',
         strokeWidth: 0.5,
         selectable: false,
         evented: false,
@@ -58,8 +117,17 @@ function buildGridGroup(): Group {
   }
   for (let y = 0; y <= DESIGN_H_PX; y += minorStep) {
     objects.push(
-      new Line([0, y, DESIGN_W_PX, y], {
+      new Line([RULER_SIZE, RULER_SIZE + y, RULER_SIZE + DESIGN_W_PX, RULER_SIZE + y], {
         stroke: '#F0F0F0',
+        strokeWidth: 0.5,
+        selectable: false,
+        evented: false,
+      })
+    );
+    // Minor tick on left ruler
+    objects.push(
+      new Line([RULER_SIZE - 3, RULER_SIZE + y, RULER_SIZE, RULER_SIZE + y], {
+        stroke: '#666',
         strokeWidth: 0.5,
         selectable: false,
         evented: false,
@@ -67,13 +135,35 @@ function buildGridGroup(): Group {
     );
   }
 
-  // Major grid (20mm)
+  // Major grid (20mm) with ruler labels
   const majorStep = GRID_MAJOR_MM * PX_PER_MM;
   for (let x = 0; x <= DESIGN_W_PX; x += majorStep) {
     objects.push(
-      new Line([x, 0, x, DESIGN_H_PX], {
+      new Line([RULER_SIZE + x, RULER_SIZE, RULER_SIZE + x, RULER_SIZE + DESIGN_H_PX], {
         stroke: '#E0E0E0',
         strokeWidth: 1,
+        selectable: false,
+        evented: false,
+      })
+    );
+    // Major tick on top ruler
+    objects.push(
+      new Line([RULER_SIZE + x, RULER_SIZE - 8, RULER_SIZE + x, RULER_SIZE], {
+        stroke: '#999',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+      })
+    );
+    // Label (mm) on top ruler
+    const mmX = Math.round(x / PX_PER_MM);
+    objects.push(
+      new FabricText(String(mmX), {
+        left: RULER_SIZE + x + 2,
+        top: 2,
+        fontSize: 8,
+        fill: '#999',
+        fontFamily: 'monospace',
         selectable: false,
         evented: false,
       })
@@ -81,9 +171,31 @@ function buildGridGroup(): Group {
   }
   for (let y = 0; y <= DESIGN_H_PX; y += majorStep) {
     objects.push(
-      new Line([0, y, DESIGN_W_PX, y], {
+      new Line([RULER_SIZE, RULER_SIZE + y, RULER_SIZE + DESIGN_W_PX, RULER_SIZE + y], {
         stroke: '#E0E0E0',
         strokeWidth: 1,
+        selectable: false,
+        evented: false,
+      })
+    );
+    // Major tick on left ruler
+    objects.push(
+      new Line([RULER_SIZE - 8, RULER_SIZE + y, RULER_SIZE, RULER_SIZE + y], {
+        stroke: '#999',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+      })
+    );
+    // Label (mm) on left ruler
+    const mmY = Math.round(y / PX_PER_MM);
+    objects.push(
+      new FabricText(String(mmY), {
+        left: 1,
+        top: RULER_SIZE + y + 2,
+        fontSize: 8,
+        fill: '#999',
+        fontFamily: 'monospace',
         selectable: false,
         evented: false,
       })
@@ -93,8 +205,8 @@ function buildGridGroup(): Group {
   // Border
   objects.push(
     new Rect({
-      left: 0,
-      top: 0,
+      left: RULER_SIZE,
+      top: RULER_SIZE,
       width: DESIGN_W_PX,
       height: DESIGN_H_PX,
       fill: 'transparent',
@@ -126,15 +238,15 @@ function buildStitchGroup(path: StitchPath): Group {
   const segments = stitchPointsToSegments(stitchPts);
   const objects: (Line | Circle | Polyline)[] = [];
 
-  // Draw stitch segments
+  // Draw stitch segments (offset by ruler)
   for (const seg of segments) {
     objects.push(
       new Line(
         [
-          seg.from.x * PX_PER_MM,
-          seg.from.y * PX_PER_MM,
-          seg.to.x * PX_PER_MM,
-          seg.to.y * PX_PER_MM,
+          RULER_SIZE + seg.from.x * PX_PER_MM,
+          RULER_SIZE + seg.from.y * PX_PER_MM,
+          RULER_SIZE + seg.to.x * PX_PER_MM,
+          RULER_SIZE + seg.to.y * PX_PER_MM,
         ],
         {
           stroke: path.color,
@@ -147,12 +259,12 @@ function buildStitchGroup(path: StitchPath): Group {
     );
   }
 
-  // Draw needle penetration dots
+  // Draw needle penetration dots (offset by ruler)
   for (const p of stitchPts) {
     objects.push(
       new Circle({
-        left: p.x * PX_PER_MM - 1,
-        top: p.y * PX_PER_MM - 1,
+        left: RULER_SIZE + p.x * PX_PER_MM - 1,
+        top: RULER_SIZE + p.y * PX_PER_MM - 1,
         radius: 1,
         fill: path.color,
         selectable: false,
@@ -164,8 +276,8 @@ function buildStitchGroup(path: StitchPath): Group {
   // For non-run stitch types, show faint guide of original path
   if (path.stitchType !== 'run' && path.points.length >= 2) {
     const guidePoints = path.points.map((p) => ({
-      x: p.x * PX_PER_MM,
-      y: p.y * PX_PER_MM,
+      x: RULER_SIZE + p.x * PX_PER_MM,
+      y: RULER_SIZE + p.y * PX_PER_MM,
     }));
     objects.push(
       new Polyline(guidePoints, {
@@ -339,15 +451,15 @@ export default function EmbroideryCanvas({
     const objects: (Line | Circle)[] = [];
     const color = propsRef.current.activeColor;
 
-    // Lines between points
+    // Lines between points (offset by ruler)
     for (let i = 1; i < points.length; i++) {
       objects.push(
         new Line(
           [
-            points[i - 1].x * PX_PER_MM,
-            points[i - 1].y * PX_PER_MM,
-            points[i].x * PX_PER_MM,
-            points[i].y * PX_PER_MM,
+            RULER_SIZE + points[i - 1].x * PX_PER_MM,
+            RULER_SIZE + points[i - 1].y * PX_PER_MM,
+            RULER_SIZE + points[i].x * PX_PER_MM,
+            RULER_SIZE + points[i].y * PX_PER_MM,
           ],
           {
             stroke: color,
@@ -361,12 +473,12 @@ export default function EmbroideryCanvas({
       );
     }
 
-    // Point markers
+    // Point markers (offset by ruler)
     for (const p of points) {
       objects.push(
         new Circle({
-          left: p.x * PX_PER_MM - 3,
-          top: p.y * PX_PER_MM - 3,
+          left: RULER_SIZE + p.x * PX_PER_MM - 3,
+          top: RULER_SIZE + p.y * PX_PER_MM - 3,
           radius: 3,
           fill: color,
           stroke: '#FFF',
@@ -466,16 +578,15 @@ export default function EmbroideryCanvas({
 
     const handler = (e: { path: { path: Array<[string, ...number[]]> } }) => {
       const fabricPath = e.path;
-      const cs = propsRef.current.canvasState;
       const points: Point[] = [];
 
       for (const cmd of fabricPath.path) {
         if (cmd[0] === 'M' || cmd[0] === 'L' || cmd[0] === 'Q') {
           const x = cmd[cmd.length - 2] as number;
           const y = cmd[cmd.length - 1] as number;
-          // Convert from canvas-space back to design mm
-          const mmX = (x * cs.zoom + cs.panX - cs.panX) / (cs.zoom * PX_PER_MM);
-          const mmY = (y * cs.zoom + cs.panY - cs.panY) / (cs.zoom * PX_PER_MM);
+          // Convert from canvas-space back to design mm (subtract ruler offset)
+          const mmX = (x - RULER_SIZE) / PX_PER_MM;
+          const mmY = (y - RULER_SIZE) / PX_PER_MM;
           const designPt = { x: mmX, y: mmY };
           // Downsample
           const last = points[points.length - 1];
@@ -549,8 +660,8 @@ export default function EmbroideryCanvas({
       if (tool === 'inputA') {
         const pointer = fc.getScenePoint(evt);
         const designPt: Point = {
-          x: pointer.x / PX_PER_MM,
-          y: pointer.y / PX_PER_MM,
+          x: (pointer.x - RULER_SIZE) / PX_PER_MM,
+          y: (pointer.y - RULER_SIZE) / PX_PER_MM,
         };
         const newPoints = [...activePointsRef.current, designPt];
         setActivePoints(newPoints);
@@ -575,9 +686,9 @@ export default function EmbroideryCanvas({
         return;
       }
 
-      // Report design coordinates
+      // Report design coordinates (subtract ruler offset)
       const pointer = fc.getScenePoint(evt);
-      onMouseMove(pointer.x / PX_PER_MM, pointer.y / PX_PER_MM);
+      onMouseMove((pointer.x - RULER_SIZE) / PX_PER_MM, (pointer.y - RULER_SIZE) / PX_PER_MM);
     };
 
     const onMouseUp = (opt: { e: MouseEvent }) => {
