@@ -1,0 +1,8 @@
+interface EmbroideryCanvasProps {
+  stitches: StitchObject[];
+  setStitches: React.Dispatch<React.SetStateAction<StitchObject[]>>;
+  densityMm: number;
+  selectedStitchId: string | null;
+  setSelectedStitchId: (id: string | null) => void;
+  onClearAll: () => void;
+}
