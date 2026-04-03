@@ -1,42 +1,224 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   MousePointer2,
-  Paintbrush,
-  Pen,
   Download,
   Trash2,
-  Palette,
-  Settings2,
+  ZoomIn,
+  ZoomOut,
+  Grid3X3,
+  Undo,
+  Redo,
+  Save,
+  FolderOpen,
+  ChevronRight,
+  Layers,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import EmbroideryCanvas, {
   EmbroideryCanvasRef,
 } from "@/components/embroidery-canvas";
 
-type Tool = "select" | "satin" | "running";
+type Tool = "select" | "inputA" | "inputB" | "running" | "fill";
+type PointType = "curve" | "straight";
 
-const QUICK_COLORS = [
-  { color: "#D4AF37", name: "Gold" },
+interface ToolInfo {
+  id: Tool;
+  name: string;
+  shortName: string;
+  description: string;
+  hotkey: string;
+  icon: React.ReactNode;
+}
+
+const TOOLS: ToolInfo[] = [
+  {
+    id: "select",
+    name: "Select",
+    shortName: "Select",
+    description: "Select and move objects",
+    hotkey: "V",
+    icon: <MousePointer2 size={20} />,
+  },
+  {
+    id: "inputA",
+    name: "Input A - Satin",
+    shortName: "Input A",
+    description: "Column stitch with satin fill. Left-click: straight point, Right-click: curve point",
+    hotkey: "A",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 20 L12 4 L20 20" />
+        <line x1="7" y1="14" x2="17" y2="14" />
+      </svg>
+    ),
+  },
+  {
+    id: "inputB",
+    name: "Input B - Complex Fill",
+    shortName: "Input B",
+    description: "Complex fill with variable density. Left-click: straight point, Right-click: curve point",
+    hotkey: "B",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 20 L8 8 L12 16 L16 4 L20 20" />
+      </svg>
+    ),
+  },
+  {
+    id: "running",
+    name: "Running Stitch",
+    shortName: "Run",
+    description: "Simple running stitch along a path",
+    hotkey: "R",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="4 2">
+        <path d="M4 12 L20 12" />
+      </svg>
+    ),
+  },
+  {
+    id: "fill",
+    name: "Fill Stitch",
+    shortName: "Fill",
+    description: "Area fill with tatami or complex patterns",
+    hotkey: "F",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <line x1="4" y1="8" x2="20" y2="8" />
+        <line x1="4" y1="12" x2="20" y2="12" />
+        <line x1="4" y1="16" x2="20" y2="16" />
+      </svg>
+    ),
+  },
+];
+
+const THREAD_COLORS = [
+  { color: "#D4AF37", name: "Metallic Gold" },
+  { color: "#C0C0C0", name: "Silver" },
   { color: "#000000", name: "Black" },
   { color: "#FFFFFF", name: "White" },
-  { color: "#e74c3c", name: "Red" },
-  { color: "#3498db", name: "Blue" },
-  { color: "#2ecc71", name: "Green" },
+  { color: "#8B0000", name: "Burgundy" },
+  { color: "#DC143C", name: "Crimson" },
+  { color: "#FF6347", name: "Coral" },
+  { color: "#FF8C00", name: "Dark Orange" },
+  { color: "#FFD700", name: "Gold" },
+  { color: "#228B22", name: "Forest Green" },
+  { color: "#006400", name: "Dark Green" },
+  { color: "#20B2AA", name: "Teal" },
+  { color: "#000080", name: "Navy" },
+  { color: "#4169E1", name: "Royal Blue" },
+  { color: "#9932CC", name: "Orchid" },
+  { color: "#8B4513", name: "Saddle Brown" },
 ];
 
 const PIXELS_PER_MM = 3.7795275591;
 
-export default function EmbroideryWorkspace() {
-  const [tool, setTool] = useState<Tool>("satin");
-  const [color, setColor] = useState("#D4AF37");
-  const [spacing, setSpacing] = useState(0.4);
-  const [satinWidth, setSatinWidth] = useState(3);
+export default function EmbroideryStudio() {
+  // Tool state
+  const [tool, setTool] = useState<Tool>("inputA");
+  const [pointType, setPointType] = useState<PointType>("straight");
+  
+  // Thread settings
+  const [threadColor, setThreadColor] = useState("#D4AF37");
+  const [threadWeight, setThreadWeight] = useState(40);
+  
+  // Stitch properties
+  const [density, setDensity] = useState(4.0); // lines per mm
+  const [pullCompensation, setPullCompensation] = useState(0.3); // mm
+  const [satinWidth, setSatinWidth] = useState(3.0); // mm
+  const [underlay, setUnderlay] = useState(true);
+  const [runningLength, setRunningLength] = useState(2.5); // mm
+  
+  // Canvas state
+  const [zoom, setZoom] = useState(100);
+  const [showGrid, setShowGrid] = useState(true);
   const [stitchCount, setStitchCount] = useState(0);
   const [coords, setCoords] = useState({ x: 0, y: 0 });
-  const [showSettings, setShowSettings] = useState(false);
-
+  
+  // Layers
+  const [layers, setLayers] = useState([
+    { id: 1, name: "Layer 1", visible: true, locked: false, color: "#D4AF37" },
+  ]);
+  const [activeLayer, setActiveLayer] = useState(1);
+  
+  // UI state
+  const [expandedPanel, setExpandedPanel] = useState<string | null>("properties");
+  
   const canvasRef = useRef<EmbroideryCanvasRef | null>(null);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+      
+      const key = e.key.toUpperCase();
+      
+      // Tool shortcuts
+      if (key === "V") setTool("select");
+      if (key === "A") setTool("inputA");
+      if (key === "B") setTool("inputB");
+      if (key === "R") setTool("running");
+      if (key === "F") setTool("fill");
+      
+      // Zoom
+      if (e.ctrlKey || e.metaKey) {
+        if (key === "=" || key === "+") {
+          e.preventDefault();
+          setZoom((z) => Math.min(400, z + 25));
+        }
+        if (key === "-") {
+          e.preventDefault();
+          setZoom((z) => Math.max(25, z - 25));
+        }
+        if (key === "0") {
+          e.preventDefault();
+          setZoom(100);
+        }
+        if (key === "G") {
+          e.preventDefault();
+          setShowGrid((g) => !g);
+        }
+      }
+      
+      // Delete
+      if (key === "DELETE" || key === "BACKSPACE") {
+        // Would delete selected objects
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Handle right-click for curve points
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      if (tool === "inputA" || tool === "inputB") {
+        e.preventDefault();
+        setPointType("curve");
+      }
+    };
+    
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 0) {
+        setPointType("straight");
+      }
+    };
+    
+    window.addEventListener("contextmenu", handleContextMenu);
+    window.addEventListener("mousedown", handleMouseDown);
+    
+    return () => {
+      window.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [tool]);
 
   const handleExportDST = useCallback(() => {
     const canvas = canvasRef.current;
@@ -62,218 +244,463 @@ export default function EmbroideryWorkspace() {
   }, []);
 
   const handleClear = useCallback(() => {
-    if (confirm("Clear all stitches?")) {
+    if (confirm("Clear all stitches? This cannot be undone.")) {
       canvasRef.current?.clearCanvas();
     }
   }, []);
 
+  const togglePanel = (panel: string) => {
+    setExpandedPanel(expandedPanel === panel ? null : panel);
+  };
+
+  // Map tool to canvas tool type
+  const getCanvasTool = (): "select" | "satin" | "running" => {
+    if (tool === "select") return "select";
+    if (tool === "running") return "running";
+    return "satin";
+  };
+
   return (
-    <div className="h-dvh flex flex-col bg-[#1a1a1a] overflow-hidden select-none">
-      {/* Header - compact for mobile */}
-      <header className="h-12 bg-[#2d2d2d] flex items-center justify-between px-2 sm:px-4 border-b border-[#444] shrink-0">
-        <span className="text-[#D4AF37] font-bold text-xs sm:text-sm tracking-wide">
-          GOLD LETTER
-        </span>
+    <div className="h-screen flex flex-col bg-[#1e1e1e] overflow-hidden select-none">
+      {/* Menu Bar */}
+      <header className="h-8 bg-[#2d2d2d] flex items-center px-2 border-b border-[#3c3c3c] text-xs">
+        <div className="flex items-center gap-1">
+          <span className="text-[#D4AF37] font-bold text-sm tracking-wide mr-4">GOLD LETTER STUDIO</span>
+          <button className="px-3 py-1 text-[#ccc] hover:bg-[#3c3c3c] rounded">File</button>
+          <button className="px-3 py-1 text-[#ccc] hover:bg-[#3c3c3c] rounded">Edit</button>
+          <button className="px-3 py-1 text-[#ccc] hover:bg-[#3c3c3c] rounded">View</button>
+          <button className="px-3 py-1 text-[#ccc] hover:bg-[#3c3c3c] rounded">Stitch</button>
+          <button className="px-3 py-1 text-[#ccc] hover:bg-[#3c3c3c] rounded">Design</button>
+          <button className="px-3 py-1 text-[#ccc] hover:bg-[#3c3c3c] rounded">Help</button>
+        </div>
+      </header>
+
+      {/* Toolbar */}
+      <div className="h-10 bg-[#252526] flex items-center px-2 gap-1 border-b border-[#3c3c3c]">
+        {/* File operations */}
+        <div className="flex items-center gap-1 pr-3 border-r border-[#3c3c3c]">
+          <button className="p-1.5 text-[#ccc] hover:bg-[#3c3c3c] rounded" title="Open (Ctrl+O)">
+            <FolderOpen size={18} />
+          </button>
+          <button className="p-1.5 text-[#ccc] hover:bg-[#3c3c3c] rounded" title="Save (Ctrl+S)">
+            <Save size={18} />
+          </button>
+        </div>
         
-        {/* Export DST Button - Prominent */}
+        {/* Undo/Redo */}
+        <div className="flex items-center gap-1 px-3 border-r border-[#3c3c3c]">
+          <button className="p-1.5 text-[#555] cursor-not-allowed rounded" title="Undo (Ctrl+Z)">
+            <Undo size={18} />
+          </button>
+          <button className="p-1.5 text-[#555] cursor-not-allowed rounded" title="Redo (Ctrl+Y)">
+            <Redo size={18} />
+          </button>
+        </div>
+        
+        {/* Zoom */}
+        <div className="flex items-center gap-1 px-3 border-r border-[#3c3c3c]">
+          <button 
+            onClick={() => setZoom((z) => Math.max(25, z - 25))} 
+            className="p-1.5 text-[#ccc] hover:bg-[#3c3c3c] rounded"
+            title="Zoom Out"
+          >
+            <ZoomOut size={18} />
+          </button>
+          <span className="text-xs text-[#ccc] w-12 text-center font-mono">{zoom}%</span>
+          <button 
+            onClick={() => setZoom((z) => Math.min(400, z + 25))} 
+            className="p-1.5 text-[#ccc] hover:bg-[#3c3c3c] rounded"
+            title="Zoom In"
+          >
+            <ZoomIn size={18} />
+          </button>
+        </div>
+        
+        {/* Grid toggle */}
+        <div className="flex items-center gap-1 px-3 border-r border-[#3c3c3c]">
+          <button 
+            onClick={() => setShowGrid(!showGrid)}
+            className={`p-1.5 rounded ${showGrid ? "bg-[#D4AF37] text-black" : "text-[#ccc] hover:bg-[#3c3c3c]"}`}
+            title="Toggle Grid (Ctrl+G)"
+          >
+            <Grid3X3 size={18} />
+          </button>
+        </div>
+        
+        {/* Export DST - Prominent */}
+        <div className="flex-1" />
         <button
           onClick={handleExportDST}
-          className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation"
+          className="flex items-center gap-2 px-4 py-1.5 rounded font-bold text-sm transition-all hover:brightness-110 active:scale-95"
           style={{ background: "#D4AF37", color: "#000" }}
         >
           <Download size={16} />
-          <span>Export DST</span>
+          Export to DST
         </button>
-      </header>
+      </div>
 
-      {/* Main workspace */}
+      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Tool Palette - Optimized for mobile touch */}
-        <aside className="w-20 sm:w-24 bg-[#2d2d2d] border-r border-[#444] flex flex-col shrink-0">
-          {/* Section label */}
-          <div className="px-2 py-2 text-[10px] text-[#999] font-medium uppercase tracking-wider text-center border-b border-[#444]">
-            Tools
-          </div>
-
-          {/* Tool buttons - Large touch targets */}
-          <div className="flex flex-col items-center gap-3 p-2 sm:p-3">
-            {/* Select Tool */}
+        {/* Left Sidebar - Tools */}
+        <aside className="w-14 bg-[#252526] border-r border-[#3c3c3c] flex flex-col py-2">
+          {TOOLS.map((t) => (
             <button
-              onClick={() => setTool("select")}
-              className={`w-full aspect-square rounded-xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 touch-manipulation ${
-                tool === "select"
-                  ? "bg-[#D4AF37] text-black ring-2 ring-white"
-                  : "bg-[#3c3c3c] text-[#ccc] border-2 border-transparent hover:bg-[#444]"
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              className={`relative mx-1 mb-1 p-2.5 rounded flex flex-col items-center justify-center transition-all group ${
+                tool === t.id
+                  ? "bg-[#D4AF37] text-black"
+                  : "text-[#ccc] hover:bg-[#3c3c3c]"
               }`}
+              title={`${t.name} (${t.hotkey})`}
             >
-              <MousePointer2 size={24} />
-              <span className="text-[10px] font-semibold">Select</span>
+              {t.icon}
+              <span className="text-[8px] mt-0.5 font-medium">{t.shortName}</span>
+              
+              {/* Tooltip */}
+              <div className="absolute left-full ml-2 px-2 py-1 bg-[#1e1e1e] border border-[#3c3c3c] rounded text-xs text-[#ccc] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
+                <div className="font-medium">{t.name}</div>
+                <div className="text-[#888] text-[10px]">{t.description}</div>
+                <div className="text-[#D4AF37] text-[10px] mt-0.5">Hotkey: {t.hotkey}</div>
+              </div>
             </button>
-
-            {/* Divider */}
-            <div className="w-full h-px bg-[#444]" />
-
-            {/* Input A - Satin Tool */}
-            <button
-              onClick={() => setTool("satin")}
-              className={`w-full aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 touch-manipulation ${
-                tool === "satin"
-                  ? "bg-[#D4AF37] text-black ring-2 ring-white"
-                  : "bg-[#3c3c3c] text-[#ccc] border-2 border-transparent hover:bg-[#444]"
-              }`}
-            >
-              <Paintbrush size={24} />
-              <span className="text-[11px] font-bold">Input A</span>
-              <span className="text-[9px] opacity-80">(Satin)</span>
-            </button>
-
-            {/* Running Stitch Tool */}
-            <button
-              onClick={() => setTool("running")}
-              className={`w-full aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 touch-manipulation ${
-                tool === "running"
-                  ? "bg-[#D4AF37] text-black ring-2 ring-white"
-                  : "bg-[#3c3c3c] text-[#ccc] border-2 border-transparent hover:bg-[#444]"
-              }`}
-            >
-              <Pen size={24} />
-              <span className="text-[11px] font-bold">Running</span>
-              <span className="text-[9px] opacity-80">Stitch</span>
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div className="mx-2 h-px bg-[#444]" />
-
-          {/* Quick Color selector */}
-          <div className="p-2 sm:p-3">
-            <div className="text-[9px] text-[#999] font-medium uppercase mb-2 text-center">
-              Color
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {QUICK_COLORS.map((c) => (
-                <button
-                  key={c.color}
-                  onClick={() => setColor(c.color)}
-                  className={`aspect-square rounded-lg transition-all active:scale-95 touch-manipulation ${
-                    color === c.color
-                      ? "ring-2 ring-white scale-105"
-                      : "ring-1 ring-[#555]"
-                  }`}
-                  style={{ backgroundColor: c.color }}
-                  aria-label={c.name}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Spacer */}
+          ))}
+          
           <div className="flex-1" />
-
-          {/* Settings toggle */}
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className={`mx-2 mb-2 p-3 rounded-lg transition-all active:scale-95 touch-manipulation ${
-              showSettings ? "bg-[#D4AF37] text-black" : "bg-[#3c3c3c] text-[#ccc]"
-            }`}
-          >
-            <Settings2 size={20} className="mx-auto" />
-          </button>
-
-          {/* Clear button */}
+          
+          {/* Clear */}
           <button
             onClick={handleClear}
-            className="mx-2 mb-2 p-3 rounded-lg bg-[#3c3c3c] text-[#e74c3c] transition-all active:scale-95 touch-manipulation hover:bg-[#444]"
+            className="mx-1 p-2.5 rounded text-[#e74c3c] hover:bg-[#3c3c3c] transition-all"
+            title="Clear Canvas"
           >
-            <Trash2 size={20} className="mx-auto" />
+            <Trash2 size={20} />
           </button>
         </aside>
 
-        {/* Canvas area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Canvas Area */}
+        <div className="flex-1 flex flex-col bg-[#1a1a1a] overflow-hidden">
+          {/* Point type indicator for Input tools */}
+          {(tool === "inputA" || tool === "inputB") && (
+            <div className="h-7 bg-[#2d2d2d] border-b border-[#3c3c3c] flex items-center px-3 gap-4 text-xs">
+              <span className="text-[#888]">Point Mode:</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={pointType === "straight"}
+                  onChange={() => setPointType("straight")}
+                  className="accent-[#D4AF37]"
+                />
+                <span className="text-[#ccc]">Straight (Left-Click)</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={pointType === "curve"}
+                  onChange={() => setPointType("curve")}
+                  className="accent-[#D4AF37]"
+                />
+                <span className="text-[#ccc]">Curve (Right-Click)</span>
+              </label>
+            </div>
+          )}
+          
+          {/* Canvas */}
           <EmbroideryCanvas
-            tool={tool}
-            color={color}
-            spacing={spacing}
-            satinWidth={satinWidth}
+            tool={getCanvasTool()}
+            color={threadColor}
+            spacing={1 / density}
+            satinWidth={satinWidth + pullCompensation}
             onStitchCountChange={setStitchCount}
             onCoordsChange={(x, y) => setCoords({ x, y })}
             canvasRef={canvasRef}
+            zoom={zoom}
+            showGrid={showGrid}
           />
         </div>
 
-        {/* Settings Panel - Slides in from right */}
-        {showSettings && (
-          <aside className="w-48 sm:w-56 bg-[#2d2d2d] border-l border-[#444] flex flex-col shrink-0 overflow-y-auto">
-            <div className="px-3 py-2 text-xs font-semibold text-[#D4AF37] bg-[#3c3c3c] border-b border-[#444]">
-              Stitch Settings
-            </div>
-            <div className="p-3 space-y-4">
-              {/* Spacing */}
-              <div>
-                <div className="flex justify-between mb-1">
-                  <label className="text-[11px] text-[#999]">Spacing</label>
-                  <span className="text-[11px] text-[#D4AF37] font-mono">
-                    {spacing.toFixed(1)} mm
-                  </span>
+        {/* Right Panel - Properties */}
+        <aside className="w-64 bg-[#252526] border-l border-[#3c3c3c] flex flex-col overflow-hidden">
+          {/* Thread Color Panel */}
+          <div className="border-b border-[#3c3c3c]">
+            <button
+              onClick={() => togglePanel("colors")}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#ccc] hover:bg-[#2d2d2d]"
+            >
+              <span>Thread Colors</span>
+              <ChevronRight
+                size={14}
+                className={`transform transition-transform ${expandedPanel === "colors" ? "rotate-90" : ""}`}
+              />
+            </button>
+            {expandedPanel === "colors" && (
+              <div className="p-3 bg-[#1e1e1e]">
+                <div className="grid grid-cols-8 gap-1 mb-3">
+                  {THREAD_COLORS.map((c) => (
+                    <button
+                      key={c.color}
+                      onClick={() => setThreadColor(c.color)}
+                      className={`aspect-square rounded transition-all ${
+                        threadColor === c.color
+                          ? "ring-2 ring-white scale-110"
+                          : "ring-1 ring-[#3c3c3c] hover:ring-[#555]"
+                      }`}
+                      style={{ backgroundColor: c.color }}
+                      title={c.name}
+                    />
+                  ))}
                 </div>
-                <input
-                  type="range"
-                  min="0.2"
-                  max="2"
-                  step="0.1"
-                  value={spacing}
-                  onChange={(e) => setSpacing(parseFloat(e.target.value))}
-                  className="w-full h-8 cursor-pointer accent-[#D4AF37] touch-manipulation"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={threadColor}
+                    onChange={(e) => setThreadColor(e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={threadColor}
+                    onChange={(e) => setThreadColor(e.target.value)}
+                    className="flex-1 h-7 px-2 bg-[#3c3c3c] border border-[#555] rounded text-xs text-[#ccc] font-mono"
+                  />
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <label className="text-[10px] text-[#888]">Weight:</label>
+                  <select
+                    value={threadWeight}
+                    onChange={(e) => setThreadWeight(Number(e.target.value))}
+                    className="flex-1 h-6 px-1 bg-[#3c3c3c] border border-[#555] rounded text-xs text-[#ccc]"
+                  >
+                    <option value={30}>30 wt (Heavy)</option>
+                    <option value={40}>40 wt (Standard)</option>
+                    <option value={50}>50 wt (Fine)</option>
+                    <option value={60}>60 wt (Extra Fine)</option>
+                  </select>
+                </div>
               </div>
+            )}
+          </div>
 
-              {/* Satin Width - only for satin tool */}
-              {tool === "satin" && (
+          {/* Stitch Properties Panel */}
+          <div className="border-b border-[#3c3c3c]">
+            <button
+              onClick={() => togglePanel("properties")}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#ccc] hover:bg-[#2d2d2d]"
+            >
+              <span>Stitch Properties</span>
+              <ChevronRight
+                size={14}
+                className={`transform transition-transform ${expandedPanel === "properties" ? "rotate-90" : ""}`}
+              />
+            </button>
+            {expandedPanel === "properties" && (
+              <div className="p-3 bg-[#1e1e1e] space-y-4">
+                {/* Density */}
                 <div>
                   <div className="flex justify-between mb-1">
-                    <label className="text-[11px] text-[#999]">Satin Width</label>
+                    <label className="text-[10px] text-[#888] uppercase tracking-wider">Density</label>
                     <span className="text-[11px] text-[#D4AF37] font-mono">
-                      {satinWidth.toFixed(1)} mm
+                      {density.toFixed(1)} lines/mm
                     </span>
                   </div>
                   <input
                     type="range"
-                    min="1"
-                    max="10"
-                    step="0.5"
-                    value={satinWidth}
-                    onChange={(e) => setSatinWidth(parseFloat(e.target.value))}
-                    className="w-full h-8 cursor-pointer accent-[#D4AF37] touch-manipulation"
+                    min="2"
+                    max="8"
+                    step="0.1"
+                    value={density}
+                    onChange={(e) => setDensity(parseFloat(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none bg-[#3c3c3c] cursor-pointer accent-[#D4AF37]"
                   />
+                  <div className="flex justify-between text-[9px] text-[#555] mt-0.5">
+                    <span>Loose</span>
+                    <span>Dense</span>
+                  </div>
                 </div>
-              )}
 
-              {/* Custom color picker */}
-              <div>
-                <label className="text-[11px] text-[#999] block mb-1">
-                  Custom Color
-                </label>
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="w-full h-10 rounded cursor-pointer touch-manipulation"
-                />
+                {/* Pull Compensation */}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-[10px] text-[#888] uppercase tracking-wider">Pull Compensation</label>
+                    <span className="text-[11px] text-[#D4AF37] font-mono">
+                      {pullCompensation.toFixed(2)} mm
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={pullCompensation}
+                    onChange={(e) => setPullCompensation(parseFloat(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none bg-[#3c3c3c] cursor-pointer accent-[#D4AF37]"
+                  />
+                  <div className="flex justify-between text-[9px] text-[#555] mt-0.5">
+                    <span>None</span>
+                    <span>Max</span>
+                  </div>
+                </div>
+
+                {/* Satin Width (for satin tools) */}
+                {(tool === "inputA" || tool === "inputB") && (
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <label className="text-[10px] text-[#888] uppercase tracking-wider">Satin Width</label>
+                      <span className="text-[11px] text-[#D4AF37] font-mono">
+                        {satinWidth.toFixed(1)} mm
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="12"
+                      step="0.1"
+                      value={satinWidth}
+                      onChange={(e) => setSatinWidth(parseFloat(e.target.value))}
+                      className="w-full h-1.5 rounded-full appearance-none bg-[#3c3c3c] cursor-pointer accent-[#D4AF37]"
+                    />
+                  </div>
+                )}
+
+                {/* Running Stitch Length (for running tool) */}
+                {tool === "running" && (
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <label className="text-[10px] text-[#888] uppercase tracking-wider">Stitch Length</label>
+                      <span className="text-[11px] text-[#D4AF37] font-mono">
+                        {runningLength.toFixed(1)} mm
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="0.1"
+                      value={runningLength}
+                      onChange={(e) => setRunningLength(parseFloat(e.target.value))}
+                      className="w-full h-1.5 rounded-full appearance-none bg-[#3c3c3c] cursor-pointer accent-[#D4AF37]"
+                    />
+                  </div>
+                )}
+
+                {/* Underlay */}
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-[#888] uppercase tracking-wider">Underlay</label>
+                  <button
+                    onClick={() => setUnderlay(!underlay)}
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      underlay ? "bg-[#D4AF37]" : "bg-[#3c3c3c]"
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
+                        underlay ? "translate-x-5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
+            )}
+          </div>
+
+          {/* Layers Panel */}
+          <div className="border-b border-[#3c3c3c]">
+            <button
+              onClick={() => togglePanel("layers")}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs font-medium text-[#ccc] hover:bg-[#2d2d2d]"
+            >
+              <span className="flex items-center gap-1.5">
+                <Layers size={14} />
+                Layers
+              </span>
+              <ChevronRight
+                size={14}
+                className={`transform transition-transform ${expandedPanel === "layers" ? "rotate-90" : ""}`}
+              />
+            </button>
+            {expandedPanel === "layers" && (
+              <div className="bg-[#1e1e1e]">
+                {layers.map((layer) => (
+                  <div
+                    key={layer.id}
+                    onClick={() => setActiveLayer(layer.id)}
+                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer ${
+                      activeLayer === layer.id
+                        ? "bg-[#2d2d2d]"
+                        : "hover:bg-[#252526]"
+                    }`}
+                  >
+                    <div
+                      className="w-3 h-3 rounded"
+                      style={{ backgroundColor: layer.color }}
+                    />
+                    <span className="flex-1 text-xs text-[#ccc]">{layer.name}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLayers(
+                          layers.map((l) =>
+                            l.id === layer.id ? { ...l, visible: !l.visible } : l
+                          )
+                        );
+                      }}
+                      className="p-1 text-[#888] hover:text-[#ccc]"
+                    >
+                      {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLayers(
+                          layers.map((l) =>
+                            l.id === layer.id ? { ...l, locked: !l.locked } : l
+                          )
+                        );
+                      }}
+                      className="p-1 text-[#888] hover:text-[#ccc]"
+                    >
+                      {layer.locked ? <Lock size={14} /> : <Unlock size={14} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Info Panel - Always visible at bottom */}
+          <div className="mt-auto p-3 bg-[#1e1e1e] border-t border-[#3c3c3c]">
+            <div className="text-[10px] text-[#888] uppercase tracking-wider mb-2">Design Info</div>
+            <div className="grid grid-cols-2 gap-y-1 text-xs">
+              <span className="text-[#888]">Stitches:</span>
+              <span className="text-[#D4AF37] font-mono text-right">{stitchCount.toLocaleString()}</span>
+              <span className="text-[#888]">Colors:</span>
+              <span className="text-[#ccc] font-mono text-right">1</span>
+              <span className="text-[#888]">Est. Time:</span>
+              <span className="text-[#ccc] font-mono text-right">
+                {Math.ceil(stitchCount / 800)} min
+              </span>
             </div>
-          </aside>
-        )}
+          </div>
+        </aside>
       </div>
 
-      {/* Footer status bar */}
-      <footer className="h-8 bg-[#007acc] flex items-center justify-between px-3 text-[11px] text-white shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
-          <span>Ready</span>
+      {/* Status Bar */}
+      <footer className="h-6 bg-[#007acc] flex items-center justify-between px-3 text-[10px] text-white">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
+            <span>Ready</span>
+          </div>
+          <span className="text-white/70">|</span>
+          <span>Tool: {TOOLS.find((t) => t.id === tool)?.name}</span>
         </div>
-        <div className="font-mono text-[10px] sm:text-[11px]">
-          X: {coords.x.toFixed(1)}mm | Y: {coords.y.toFixed(1)}mm | Stitches: {stitchCount}
+        <div className="flex items-center gap-4 font-mono">
+          <span>X: {coords.x.toFixed(2)} mm</span>
+          <span>Y: {coords.y.toFixed(2)} mm</span>
+          <span className="text-white/70">|</span>
+          <span>Stitches: {stitchCount.toLocaleString()}</span>
+          <span className="text-white/70">|</span>
+          <span>Zoom: {zoom}%</span>
         </div>
       </footer>
     </div>
