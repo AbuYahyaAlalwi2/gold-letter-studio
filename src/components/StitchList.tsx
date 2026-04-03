@@ -85,11 +85,13 @@ export default function StitchList({
               <GripVertical size={12} className="text-gray-600 shrink-0" />
               {/* Order number */}
               <span className="text-gray-600 w-4 text-right shrink-0">{orderNum}</span>
-              {/* Color swatch */}
+              {/* Color swatch + index */}
               <span
                 className="w-3 h-3 rounded-sm border border-[#555] shrink-0"
                 style={{ backgroundColor: path.color }}
+                title={`Color #${path.colorIndex}`}
               />
+              <span className="text-[#D4AF37] text-[9px] shrink-0">C{path.colorIndex}</span>
               {/* Stitch type label */}
               <span className="text-gray-300 truncate flex-1">
                 {STITCH_LABELS[path.stitchType] || path.stitchType}

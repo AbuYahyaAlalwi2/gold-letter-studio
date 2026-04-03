@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { Canvas as FabricCanvas, Line, Circle, Group, Rect, Polyline, PencilBrush, FabricObject, FabricText } from 'fabric';
-import { CanvasState, Point, StitchPath, ToolType, StitchType } from '../types/embroidery';
+import { CanvasState, Point, StitchPath, ToolType, StitchType, getColorIndex } from '../types/embroidery';
 import { convertPathToStitches, stitchPointsToSegments } from '../utils/stitch-converter';
 
 /** WeakSet used to tag Fabric objects that represent stitch paths */
@@ -514,6 +514,7 @@ export default function EmbroideryCanvas({
           points: [...points],
           stitchType: st,
           color: col,
+          colorIndex: getColorIndex(col),
           density: d,
           width: sw,
         };
@@ -618,6 +619,7 @@ export default function EmbroideryCanvas({
           points,
           stitchType: st,
           color: col,
+          colorIndex: getColorIndex(col),
           density: d,
           width: sw,
         };

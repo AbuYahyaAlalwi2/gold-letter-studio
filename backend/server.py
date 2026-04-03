@@ -42,6 +42,7 @@ class PointPayload(BaseModel):
 
 class StitchObjectPayload(BaseModel):
     color: str
+    colorIndex: int = 1
     points: List[PointPayload]
 
 
@@ -70,6 +71,7 @@ async def generate_dst(req: GenerateDSTRequest) -> Response:
     objects = [
         StitchObject(
             color=obj.color,
+            color_index=obj.colorIndex,
             points=[StitchPoint(x=p.x, y=p.y) for p in obj.points],
         )
         for obj in req.objects
