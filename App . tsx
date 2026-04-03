@@ -54,3 +54,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+import PropertyPanel from './components/PropertyPanel';
