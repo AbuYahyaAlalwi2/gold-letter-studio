@@ -13,13 +13,17 @@
         .logo-text { color: var(--gold); font-weight: bold; letter-spacing: 1px; margin-left: 15px; }
 
         .standard-bar { height: 45px; background: var(--wilcom-gray); display: flex; align-items: center; padding: 0 10px; gap: 10px; border-bottom: 1px solid #111; }
-        .btn-icon { padding: 8px; border-radius: 4px; cursor: pointer; color: #ccc; transition: 0.2s; }
+        .btn-icon { padding: 8px; border-radius: 4px; cursor: pointer; color: #ccc; transition: 0.2s; user-select: none; -webkit-user-select: none; }
         .btn-icon:hover { background: #444; color: var(--gold); }
 
         .main-container { display: flex; flex: 1; overflow: hidden; }
 
-        .toolbox { width: 50px; background: var(--wilcom-gray); border-left: 1px solid #111; display: flex; flex-direction: column; align-items: center; py: 10px; gap: 8px; }
-        .tool-active { background: var(--gold); color: #000; }
+        .toolbox { width: 70px; background: var(--wilcom-gray); border-left: 1px solid #111; display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 8px; overflow-y: auto; }
+        .tool-btn { width: 50px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; color: #ccc; transition: 0.2s; user-select: none; -webkit-user-select: none; border: 2px solid transparent; font-size: 11px; gap: 3px; padding: 4px; text-align: center; touch-action: manipulation; }
+        .tool-btn:active { transform: scale(0.95); }
+        .tool-btn.active { background: var(--gold); color: #000; border-color: #fff; }
+        .tool-btn:not(.active):hover { background: #444; }
+        .tool-btn i { font-size: 20px; }
 
         .work-area { flex: 1; background: #111; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative; }
 
@@ -31,9 +35,22 @@
         canvas { display: block; cursor: crosshair; touch-action: none; }
         #mainCanvas { position: absolute; top: 30px; left: 30px; }
 
-        .side-panel { width: 230px; background: var(--wilcom-gray); border-right: 1px solid #111; display: flex; flex-direction: column; }
-        .panel-header { background: #3c3c3c; padding: 8px 12px; font-size: 12px; font-weight: bold; color: var(--gold); border-bottom: 1px solid #222; }
-        .panel-content { padding: 15px; font-size: 12px; }
+        .side-panel { width: 230px; background: var(--wilcom-gray); border-right: 1px solid #111; display: flex; flex-direction: column; overflow-y: auto; }
+        .panel-header { background: #3c3c3c; padding: 10px 12px; font-size: 12px; font-weight: bold; color: var(--gold); border-bottom: 1px solid #222; }
+        .panel-content { padding: 12px; font-size: 12px; }
+
+        .control-group { margin-bottom: 14px; }
+        .control-group label { display: block; margin-bottom: 6px; color: #ccc; font-weight: 500; }
+        .control-group input, .control-group select { width: 100%; background: #444; color: white; border: 1px solid #555; padding: 6px; border-radius: 3px; font-size: 11px; }
+        .control-group input[type="range"] { padding: 0; cursor: pointer; }
+        .control-group input[type="color"] { cursor: pointer; height: 32px; }
+
+        .color-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+        .color-swatch { width: 100%; aspect-ratio: 1; border: 2px solid #555; border-radius: 3px; cursor: pointer; transition: 0.2s; }
+        .color-swatch.active { border-color: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.5); }
+        .color-swatch:hover { border-color: #ccc; }
+
+        .value-display { color: #999; font-size: 10px; margin-top: 4px; }
 
         footer { height: 28px; background: var(--blue-status); display: flex; align-items: center; padding: 0 12px; font-size: 11px; justify-content: space-between; }
     </style>
@@ -58,11 +75,10 @@
 
 <div class="main-container">
     <aside class="toolbox">
-        <div class="btn-icon tool-active"><i class="fas fa-mouse-pointer"></i></div>
-        <div class="btn-icon"><i class="fas fa-pen-nib"></i></div>
-        <div class="btn-icon"><i class="fas fa-bezier-curve"></i></div>
-        <div class="btn-icon"><i class="fas fa-font"></i></div>
-        <div class="btn-icon"><i class="fas fa-shapes"></i></div>
+        <div class="tool-btn active" data-tool="select"><i class="fas fa-arrow-pointer"></i><span>Select</span></div>
+        <div class="tool-btn" data-tool="satin"><i class="fas fa-paint-brush"></i><span>Satin</span></div>
+        <div class="tool-btn" data-tool="running"><i class="fas fa-pen"></i><span>Run</span></div>
+        <div class="tool-btn" data-tool="tatami"><i class="fas fa-square"></i><span>Fill</span></div>
     </aside>
 
     <main class="work-area">
@@ -74,25 +90,64 @@
     </main>
 
     <aside class="side-panel">
-        <div class="panel-header">خصائص الكائن (Object)</div>
+        <div class="panel-header">Stitch Settings</div>
         <div class="panel-content">
-            <label>نوع الغرزة:</label>
-            <select style="width:100%; background:#444; color:white; border:none; padding:5px; margin:8px 0;">
-                <option>Satin (ساتان)</option>
-                <option>Tatami (تاتامي)</option>
-                <option>Run (عداء)</option>
-            </select>
-            <label>الكثافة (Density):</label>
-            <input type="range" style="width:100%; margin:10px 0;">
+            <div class="control-group">
+                <label for="stitch-spacing">Spacing (mm)</label>
+                <input type="range" id="stitch-spacing" min="0.1" max="2" step="0.1" value="0.4">
+                <div class="value-display"><span id="spacing-value">0.4</span> mm</div>
+            </div>
+
+            <div class="control-group">
+                <label for="thread-color">Thread Color</label>
+                <input type="color" id="thread-color" value="#D4AF37">
+            </div>
+
+            <div class="control-group">
+                <label>Quick Colors</label>
+                <div class="color-picker">
+                    <div class="color-swatch active" style="background:#D4AF37;" data-color="#D4AF37" title="Gold"></div>
+                    <div class="color-swatch" style="background:#000;" data-color="#000" title="Black"></div>
+                    <div class="color-swatch" style="background:#fff;" data-color="#fff" title="White"></div>
+                    <div class="color-swatch" style="background:#e74c3c;" data-color="#e74c3c" title="Red"></div>
+                    <div class="color-swatch" style="background:#3498db;" data-color="#3498db" title="Blue"></div>
+                    <div class="color-swatch" style="background:#2ecc71;" data-color="#2ecc71" title="Green"></div>
+                    <div class="color-swatch" style="background:#f39c12;" data-color="#f39c12" title="Orange"></div>
+                    <div class="color-swatch" style="background:#9b59b6;" data-color="#9b59b6" title="Purple"></div>
+                    <div class="color-swatch" style="background:#e91e63;" data-color="#e91e63" title="Pink"></div>
+                    <div class="color-swatch" style="background:#1abc9c;" data-color="#1abc9c" title="Teal"></div>
+                </div>
+            </div>
         </div>
 
-        <div class="panel-header">قائمة الألوان</div>
-        <div class="panel-content" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:5px;">
-            <div style="background:#D4AF37; height:20px; border:1px solid #555;"></div>
-            <div style="background:#000; height:20px; border:1px solid #555;"></div>
-            <div style="background:#fff; height:20px; border:1px solid #555;"></div>
-            <div style="background:#f00; height:20px; border:1px solid #555;"></div>
-            <div style="background:#00f; height:20px; border:1px solid #555;"></div>
+        <div class="panel-header">Satin Options</div>
+        <div class="panel-content">
+            <div class="control-group">
+                <label for="satin-width">Width (mm)</label>
+                <input type="range" id="satin-width" min="0.5" max="10" step="0.5" value="3">
+                <div class="value-display"><span id="width-value">3</span> mm</div>
+            </div>
+
+            <div class="control-group">
+                <label for="satin-angle">Angle (°)</label>
+                <input type="range" id="satin-angle" min="0" max="180" step="5" value="45">
+                <div class="value-display"><span id="angle-value">45</span>°</div>
+            </div>
+        </div>
+
+        <div class="panel-header">Fill Options</div>
+        <div class="panel-content">
+            <div class="control-group">
+                <label for="fill-rows">Row Spacing (mm)</label>
+                <input type="range" id="fill-rows" min="0.3" max="3" step="0.1" value="0.8">
+                <div class="value-display"><span id="rows-value">0.8</span> mm</div>
+            </div>
+
+            <div class="control-group">
+                <label for="fill-angle">Fill Angle (°)</label>
+                <input type="range" id="fill-angle" min="0" max="180" step="5" value="45">
+                <div class="value-display"><span id="fill-angle-value">45</span>°</div>
+            </div>
         </div>
     </aside>
 </div>
@@ -110,12 +165,28 @@
     const stats = document.getElementById('stats');
 
     const PIXELS_PER_MM = 3.7795275591;
-    const STITCH_DENSITY = 0.4;
     const GRID_SIZE_MM = 10;
 
     let drawing = false;
     let currentPath = [];
     let stitchCount = 0;
+    let activeTool = 'select';
+    let threadColor = '#D4AF37';
+    let stitchSpacing = 0.4;
+    let satinWidth = 3;
+    let satinAngle = 45;
+    let fillRowSpacing = 0.8;
+    let fillAngle = 45;
+
+    const state = {
+        tool: 'select',
+        color: '#D4AF37',
+        spacing: 0.4,
+        satinWidth: 3,
+        satinAngle: 45,
+        fillRows: 0.8,
+        fillAngle: 45
+    };
 
     function initializeCanvas() {
         const container = document.getElementById('canvas-container');
@@ -233,61 +304,151 @@
         }
     }
 
-    function drawStitchedLine(fromX, fromY, toX, toY, color = '#D4AF37') {
+    function drawRunningStitch(fromX, fromY, toX, toY, color) {
         const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
-        const stitches = Math.max(Math.floor(distance / (STITCH_DENSITY * PIXELS_PER_MM)), 1);
+        const stitches = Math.max(Math.floor(distance / (state.spacing * PIXELS_PER_MM)), 1);
+        const stitchLen = distance / stitches;
 
-        ctx.shadowColor = 'rgba(0,0,0,0.3)';
-        ctx.shadowBlur = 1;
-        ctx.shadowOffsetX = 0.5;
-        ctx.shadowOffsetY = 0.5;
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 0.5;
+        ctx.shadowOffsetX = 0.3;
+        ctx.shadowOffsetY = 0.3;
 
-        for(let i = 0; i <= stitches; i++) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.2;
+        ctx.lineCap = 'round';
+
+        for(let i = 0; i < stitches; i++) {
             const t = i / stitches;
-            const x = fromX + (toX - fromX) * t;
-            const y = fromY + (toY - fromY) * t;
+            const t2 = (i + 0.5) / stitches;
+            const x1 = fromX + (toX - fromX) * t;
+            const y1 = fromY + (toY - fromY) * t;
+            const x2 = fromX + (toX - fromX) * t2;
+            const y2 = fromY + (toY - fromY) * t2;
 
-            const angle = Math.atan2(toY - fromY, toX - fromX);
-            const perpAngle = angle + Math.PI / 2;
-            const threadWidth = 1.5;
-
-            ctx.strokeStyle = color;
-            ctx.lineWidth = threadWidth;
-            ctx.lineCap = 'round';
-
-            const offset = Math.sin(i * Math.PI / 3) * 0.3;
-            const x1 = x + Math.cos(perpAngle) * offset;
-            const y1 = y + Math.sin(perpAngle) * offset;
-
-            if(i > 0) {
-                ctx.beginPath();
-                ctx.moveTo(prevX, prevY);
-                ctx.lineTo(x1, y1);
-                ctx.stroke();
-            }
-
-            var prevX = x1;
-            var prevY = y1;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
         }
 
         ctx.shadowColor = 'transparent';
         return stitches;
     }
 
-    mainCanvas.addEventListener('mousedown', (e) => {
+    function drawSatinStitch(fromX, fromY, toX, toY, color) {
+        const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+        const stitches = Math.max(Math.floor(distance / (state.spacing * PIXELS_PER_MM)), 1);
+
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 1;
+        ctx.shadowOffsetX = 0.5;
+        ctx.shadowOffsetY = 0.5;
+
+        const lineAngle = Math.atan2(toY - fromY, toX - fromX);
+        const perpAngle = lineAngle + Math.PI / 2;
+        const widthPx = state.satinWidth * PIXELS_PER_MM / 2;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        for(let i = 0; i <= stitches; i++) {
+            const t = i / stitches;
+            const x = fromX + (toX - fromX) * t;
+            const y = fromY + (toY - fromY) * t;
+
+            const offset = Math.sin(i * Math.PI / 4) * 0.4;
+            const x1 = x + Math.cos(perpAngle) * (widthPx + offset);
+            const y1 = y + Math.sin(perpAngle) * (widthPx + offset);
+            const x2 = x - Math.cos(perpAngle) * (widthPx + offset);
+            const y2 = y - Math.sin(perpAngle) * (widthPx + offset);
+
+            if(i > 0) {
+                ctx.beginPath();
+                ctx.moveTo(prevX1, prevY1);
+                ctx.lineTo(x1, y1);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(prevX2, prevY2);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+
+            var prevX1 = x1;
+            var prevY1 = y1;
+            var prevX2 = x2;
+            var prevY2 = y2;
+        }
+
+        ctx.shadowColor = 'transparent';
+        return stitches;
+    }
+
+    function drawTatamiFill(fromX, fromY, toX, toY, color) {
+        const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+        const rows = Math.max(Math.floor(distance / (state.fillRows * PIXELS_PER_MM)), 1);
+
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+        ctx.shadowBlur = 0.8;
+        ctx.shadowOffsetX = 0.3;
+        ctx.shadowOffsetY = 0.3;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+
+        const lineAngle = Math.atan2(toY - fromY, toX - fromX);
+        const perpAngle = lineAngle + Math.PI / 2;
+        const rowSpacePx = state.fillRows * PIXELS_PER_MM;
+
+        for(let row = 0; row < rows; row++) {
+            const offset = (row - rows / 2) * rowSpacePx;
+            const startX = fromX + Math.cos(perpAngle) * offset;
+            const startY = fromY + Math.sin(perpAngle) * offset;
+            const endX = toX + Math.cos(perpAngle) * offset;
+            const endY = toY + Math.sin(perpAngle) * offset;
+
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+        }
+
+        ctx.shadowColor = 'transparent';
+        return rows * 10;
+    }
+
+    function drawStitchedLine(fromX, fromY, toX, toY) {
+        switch(state.tool) {
+            case 'running':
+                return drawRunningStitch(fromX, fromY, toX, toY, state.color);
+            case 'satin':
+                return drawSatinStitch(fromX, fromY, toX, toY, state.color);
+            case 'tatami':
+                return drawTatamiFill(fromX, fromY, toX, toY, state.color);
+            default:
+                return 0;
+        }
+    }
+
+    function startDrawing(e) {
+        if(state.tool === 'select') return;
         drawing = true;
         const rect = mainCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         currentPath = [{x, y}];
-    });
+    }
 
-    mainCanvas.addEventListener('mouseup', () => {
+    function stopDrawing() {
         drawing = false;
         currentPath = [];
-    });
+    }
 
-    mainCanvas.addEventListener('mousemove', (e) => {
+    function handleMouseMove(e) {
         const rect = mainCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -295,9 +456,9 @@
         const mmX = (x / PIXELS_PER_MM).toFixed(2);
         const mmY = (y / PIXELS_PER_MM).toFixed(2);
 
-        stats.innerText = `X: ${mmX} mm | Y: ${mmY} mm | الغرز: ${stitchCount}`;
+        stats.innerText = `X: ${mmX} mm | Y: ${mmY} mm | Stitches: ${stitchCount}`;
 
-        if (!drawing) return;
+        if(!drawing) return;
 
         if(currentPath.length > 0) {
             const lastPoint = currentPath[currentPath.length - 1];
@@ -305,6 +466,80 @@
             stitchCount += newStitches;
             currentPath.push({x, y});
         }
+    }
+
+    mainCanvas.addEventListener('mousedown', startDrawing);
+    mainCanvas.addEventListener('mouseup', stopDrawing);
+    mainCanvas.addEventListener('mousemove', handleMouseMove);
+    mainCanvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        mainCanvas.dispatchEvent(mouseEvent);
+    });
+    mainCanvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        stopDrawing();
+    });
+    mainCanvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        mainCanvas.dispatchEvent(mouseEvent);
+    });
+
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            state.tool = btn.dataset.tool;
+        });
+    });
+
+    document.getElementById('stitch-spacing').addEventListener('input', (e) => {
+        state.spacing = parseFloat(e.target.value);
+        document.getElementById('spacing-value').textContent = state.spacing.toFixed(1);
+    });
+
+    document.getElementById('thread-color').addEventListener('input', (e) => {
+        state.color = e.target.value;
+        document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+    });
+
+    document.querySelectorAll('.color-swatch').forEach(swatch => {
+        swatch.addEventListener('click', (e) => {
+            const color = e.target.dataset.color;
+            state.color = color;
+            document.getElementById('thread-color').value = color;
+            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+            e.target.classList.add('active');
+        });
+    });
+
+    document.getElementById('satin-width').addEventListener('input', (e) => {
+        state.satinWidth = parseFloat(e.target.value);
+        document.getElementById('width-value').textContent = state.satinWidth.toFixed(1);
+    });
+
+    document.getElementById('satin-angle').addEventListener('input', (e) => {
+        state.satinAngle = parseFloat(e.target.value);
+        document.getElementById('angle-value').textContent = state.satinAngle;
+    });
+
+    document.getElementById('fill-rows').addEventListener('input', (e) => {
+        state.fillRows = parseFloat(e.target.value);
+        document.getElementById('rows-value').textContent = state.fillRows.toFixed(1);
+    });
+
+    document.getElementById('fill-angle').addEventListener('input', (e) => {
+        state.fillAngle = parseFloat(e.target.value);
+        document.getElementById('fill-angle-value').textContent = state.fillAngle;
     });
 
     initializeCanvas();
