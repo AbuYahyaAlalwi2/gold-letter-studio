@@ -9,32 +9,32 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--wilcom-dark); color: #eee; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-        /* شريط القوائم العلوي */
         .top-nav { height: 35px; background: #333; display: flex; align-items: center; padding: 0 10px; font-size: 12px; gap: 15px; border-bottom: 1px solid #444; }
         .logo-text { color: var(--gold); font-weight: bold; letter-spacing: 1px; margin-left: 15px; }
 
-        /* شريط الأدوات القياسي (Standard Toolbar) */
         .standard-bar { height: 45px; background: var(--wilcom-gray); display: flex; align-items: center; padding: 0 10px; gap: 10px; border-bottom: 1px solid #111; }
         .btn-icon { padding: 8px; border-radius: 4px; cursor: pointer; color: #ccc; transition: 0.2s; }
         .btn-icon:hover { background: #444; color: var(--gold); }
 
         .main-container { display: flex; flex: 1; overflow: hidden; }
 
-        /* صندوق الأدوات الجانبي (Toolbox) */
         .toolbox { width: 50px; background: var(--wilcom-gray); border-left: 1px solid #111; display: flex; flex-direction: column; align-items: center; py: 10px; gap: 8px; }
         .tool-active { background: var(--gold); color: #000; }
 
-        /* منطقة التصميم (Work Area) */
         .work-area { flex: 1; background: #111; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative; }
-        #canvas-frame { background: white; box-shadow: 0 0 40px rgba(0,0,0,0.7); position: relative; }
-        canvas { display: block; cursor: crosshair; touch-action: none; }
 
-        /* لوحة الخصائص (Properties) */
+        #canvas-container { position: relative; background: white; box-shadow: 0 0 40px rgba(0,0,0,0.7); }
+
+        #ruler-top { position: absolute; top: 0; left: 30px; right: 0; height: 30px; background: #f5f5f5; border-bottom: 2px solid #666; }
+        #ruler-left { position: absolute; left: 0; top: 30px; bottom: 0; width: 30px; background: #f5f5f5; border-right: 2px solid #666; }
+
+        canvas { display: block; cursor: crosshair; touch-action: none; }
+        #mainCanvas { position: absolute; top: 30px; left: 30px; }
+
         .side-panel { width: 230px; background: var(--wilcom-gray); border-right: 1px solid #111; display: flex; flex-direction: column; }
         .panel-header { background: #3c3c3c; padding: 8px 12px; font-size: 12px; font-weight: bold; color: var(--gold); border-bottom: 1px solid #222; }
         .panel-content { padding: 15px; font-size: 12px; }
 
-        /* شريط الحالة (Status Bar) */
         footer { height: 28px; background: var(--blue-status); display: flex; align-items: center; padding: 0 12px; font-size: 11px; justify-content: space-between; }
     </style>
 </head>
@@ -66,8 +66,10 @@
     </aside>
 
     <main class="work-area">
-        <div id="canvas-frame">
-            <canvas id="embroideryCanvas" width="800" height="600"></canvas>
+        <div id="canvas-container">
+            <canvas id="ruler-top"></canvas>
+            <canvas id="ruler-left"></canvas>
+            <canvas id="mainCanvas" width="800" height="600"></canvas>
         </div>
     </main>
 
@@ -101,43 +103,211 @@
 </footer>
 
 <script>
-    const canvas = document.getElementById('embroideryCanvas');
-    const ctx = canvas.getContext('2d');
+    const mainCanvas = document.getElementById('mainCanvas');
+    const ctx = mainCanvas.getContext('2d');
+    const rulerTop = document.getElementById('ruler-top');
+    const rulerLeft = document.getElementById('ruler-left');
     const stats = document.getElementById('stats');
-    let drawing = false;
 
-    // رسم الشبكة المليمتية
-    function drawGrid() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = "#f0f0f0";
-        ctx.lineWidth = 0.5;
-        for(let i=0; i<canvas.width; i+=20) {
-            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+    const PIXELS_PER_MM = 3.7795275591;
+    const STITCH_DENSITY = 0.4;
+    const GRID_SIZE_MM = 10;
+
+    let drawing = false;
+    let currentPath = [];
+    let stitchCount = 0;
+
+    function initializeCanvas() {
+        const container = document.getElementById('canvas-container');
+        const canvasWidth = mainCanvas.width;
+        const canvasHeight = mainCanvas.height;
+
+        container.style.width = (canvasWidth + 30) + 'px';
+        container.style.height = (canvasHeight + 30) + 'px';
+
+        rulerTop.width = canvasWidth;
+        rulerTop.height = 30;
+        rulerLeft.width = 30;
+        rulerLeft.height = canvasHeight;
+
+        drawRulers();
+        drawGrid();
+    }
+
+    function drawRulers() {
+        const topCtx = rulerTop.getContext('2d');
+        const leftCtx = rulerLeft.getContext('2d');
+
+        topCtx.fillStyle = '#f5f5f5';
+        topCtx.fillRect(0, 0, rulerTop.width, rulerTop.height);
+        leftCtx.fillStyle = '#f5f5f5';
+        leftCtx.fillRect(0, 0, rulerLeft.width, rulerLeft.height);
+
+        topCtx.strokeStyle = '#333';
+        topCtx.fillStyle = '#333';
+        topCtx.font = '9px Arial';
+        topCtx.textAlign = 'center';
+
+        for(let mm = 0; mm <= mainCanvas.width / PIXELS_PER_MM; mm += 10) {
+            const px = mm * PIXELS_PER_MM;
+            topCtx.beginPath();
+            topCtx.moveTo(px, 20);
+            topCtx.lineTo(px, 30);
+            topCtx.stroke();
+            topCtx.fillText(mm, px, 15);
+
+            for(let sub = 1; sub < 10; sub++) {
+                const subPx = (mm + sub) * PIXELS_PER_MM;
+                if(subPx > mainCanvas.width) break;
+                topCtx.beginPath();
+                topCtx.moveTo(subPx, sub % 5 === 0 ? 22 : 25);
+                topCtx.lineTo(subPx, 30);
+                topCtx.stroke();
+            }
         }
-        for(let i=0; i<canvas.height; i+=20) {
-            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+
+        leftCtx.strokeStyle = '#333';
+        leftCtx.fillStyle = '#333';
+        leftCtx.font = '9px Arial';
+        leftCtx.textAlign = 'center';
+
+        for(let mm = 0; mm <= mainCanvas.height / PIXELS_PER_MM; mm += 10) {
+            const px = mm * PIXELS_PER_MM;
+            leftCtx.beginPath();
+            leftCtx.moveTo(20, px);
+            leftCtx.lineTo(30, px);
+            leftCtx.stroke();
+
+            leftCtx.save();
+            leftCtx.translate(10, px);
+            leftCtx.rotate(-Math.PI / 2);
+            leftCtx.fillText(mm, 0, 0);
+            leftCtx.restore();
+
+            for(let sub = 1; sub < 10; sub++) {
+                const subPx = (mm + sub) * PIXELS_PER_MM;
+                if(subPx > mainCanvas.height) break;
+                leftCtx.beginPath();
+                leftCtx.moveTo(sub % 5 === 0 ? 22 : 25, subPx);
+                leftCtx.lineTo(30, subPx);
+                leftCtx.stroke();
+            }
         }
     }
 
-    // منطق الرسم التفاعلي
-    canvas.addEventListener('mousedown', () => { drawing = true; ctx.beginPath(); });
-    canvas.addEventListener('mouseup', () => drawing = false);
-    canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
+    function drawGrid() {
+        ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+        ctx.strokeStyle = "#e0e0e0";
+        ctx.lineWidth = 0.5;
+
+        const gridPx = GRID_SIZE_MM * PIXELS_PER_MM;
+
+        for(let i = 0; i <= mainCanvas.width; i += gridPx) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, mainCanvas.height);
+            ctx.stroke();
+        }
+
+        for(let i = 0; i <= mainCanvas.height; i += gridPx) {
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(mainCanvas.width, i);
+            ctx.stroke();
+        }
+
+        ctx.strokeStyle = "#c0c0c0";
+        ctx.lineWidth = 1;
+        const subGrid = gridPx / 2;
+        for(let i = subGrid; i <= mainCanvas.width; i += gridPx) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, mainCanvas.height);
+            ctx.stroke();
+        }
+        for(let i = subGrid; i <= mainCanvas.height; i += gridPx) {
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(mainCanvas.width, i);
+            ctx.stroke();
+        }
+    }
+
+    function drawStitchedLine(fromX, fromY, toX, toY, color = '#D4AF37') {
+        const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+        const stitches = Math.max(Math.floor(distance / (STITCH_DENSITY * PIXELS_PER_MM)), 1);
+
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 1;
+        ctx.shadowOffsetX = 0.5;
+        ctx.shadowOffsetY = 0.5;
+
+        for(let i = 0; i <= stitches; i++) {
+            const t = i / stitches;
+            const x = fromX + (toX - fromX) * t;
+            const y = fromY + (toY - fromY) * t;
+
+            const angle = Math.atan2(toY - fromY, toX - fromX);
+            const perpAngle = angle + Math.PI / 2;
+            const threadWidth = 1.5;
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = threadWidth;
+            ctx.lineCap = 'round';
+
+            const offset = Math.sin(i * Math.PI / 3) * 0.3;
+            const x1 = x + Math.cos(perpAngle) * offset;
+            const y1 = y + Math.sin(perpAngle) * offset;
+
+            if(i > 0) {
+                ctx.beginPath();
+                ctx.moveTo(prevX, prevY);
+                ctx.lineTo(x1, y1);
+                ctx.stroke();
+            }
+
+            var prevX = x1;
+            var prevY = y1;
+        }
+
+        ctx.shadowColor = 'transparent';
+        return stitches;
+    }
+
+    mainCanvas.addEventListener('mousedown', (e) => {
+        drawing = true;
+        const rect = mainCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        
-        stats.innerText = `X: ${(x/10).toFixed(2)} mm | Y: ${(y/10).toFixed(2)} mm | الغرز: ${Math.floor(x/5)}`;
-
-        if (!drawing) return;
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#D4AF37'; // لون الذهب
-        ctx.lineTo(x, y);
-        ctx.stroke();
+        currentPath = [{x, y}];
     });
 
-    drawGrid();
+    mainCanvas.addEventListener('mouseup', () => {
+        drawing = false;
+        currentPath = [];
+    });
+
+    mainCanvas.addEventListener('mousemove', (e) => {
+        const rect = mainCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const mmX = (x / PIXELS_PER_MM).toFixed(2);
+        const mmY = (y / PIXELS_PER_MM).toFixed(2);
+
+        stats.innerText = `X: ${mmX} mm | Y: ${mmY} mm | الغرز: ${stitchCount}`;
+
+        if (!drawing) return;
+
+        if(currentPath.length > 0) {
+            const lastPoint = currentPath[currentPath.length - 1];
+            const newStitches = drawStitchedLine(lastPoint.x, lastPoint.y, x, y);
+            stitchCount += newStitches;
+            currentPath.push({x, y});
+        }
+    });
+
+    initializeCanvas();
 </script>
 </body>
 </html>
