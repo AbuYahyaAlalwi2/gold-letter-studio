@@ -4,10 +4,11 @@ const menuItems = ['File', 'Edit', 'View', 'Stitch', 'Arrange', 'Help'];
 
 interface HeaderProps {
   onExport: () => void;
+  onExportDST: () => void;
   onNew: () => void;
 }
 
-export default function Header({ onExport, onNew }: HeaderProps) {
+export default function Header({ onExport, onExportDST, onNew }: HeaderProps) {
   return (
     <nav className="h-9 bg-[#333] flex items-center px-3 text-xs border-b border-[#444] select-none shrink-0">
       <span className="text-[#D4AF37] font-bold tracking-widest mr-6 text-sm">
@@ -37,7 +38,13 @@ export default function Header({ onExport, onNew }: HeaderProps) {
                 onClick={(e) => { e.stopPropagation(); onExport(); }}
                 className="block w-full text-left px-4 py-2 hover:bg-[#444] text-gray-300"
               >
-                Export DST Data...
+                Export JSON Data...
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onExportDST(); }}
+                className="block w-full text-left px-4 py-2 hover:bg-[#444] text-gray-300"
+              >
+                Export .DST File...
               </button>
             </div>
           )}

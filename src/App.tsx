@@ -7,7 +7,7 @@ import InspectorPanel from './components/InspectorPanel';
 import ColorPalette from './components/ColorPalette';
 import StatusBar from './components/StatusBar';
 import { StitchPath, ToolType, StitchType, CanvasState } from './types/embroidery';
-import { calculateStitchCount, exportDesignData, downloadDesignJSON } from './utils/dst-export';
+import { calculateStitchCount, exportDesignData, downloadDesignJSON, downloadDSTFile } from './utils/dst-export';
 
 function App() {
   // Design state
@@ -74,10 +74,20 @@ function App() {
     setPaths([]);
   }, [paths]);
 
-  // Export
+  // Export JSON
   const handleExport = useCallback(() => {
     const design = exportDesignData(paths, 200, 150);
     downloadDesignJSON(design, 'gold-letter-design.json');
+  }, [paths]);
+
+  // Export .DST via pyembroidery backend
+  const handleExportDST = useCallback(async () => {
+    try {
+      await downloadDSTFile(paths, 'gold-letter-design.dst');
+    } catch (err) {
+      console.error('DST export failed:', err);
+      alert(err instanceof Error ? err.message : 'DST export failed. Is the backend running?');
+    }
   }, [paths]);
 
   // Zoom controls
@@ -167,7 +177,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-[#1a1a1a] text-gray-200 overflow-hidden">
-      <Header onExport={handleExport} onNew={handleNew} />
+      <Header onExport={handleExport} onExportDST={handleExportDST} onNew={handleNew} />
       <Toolbar
         onNew={handleNew}
         onExport={handleExport}
