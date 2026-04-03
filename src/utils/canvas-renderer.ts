@@ -1,4 +1,5 @@
 import { StitchPath, CanvasState, Point } from '../types/embroidery';
+import { convertPathToStitches, stitchPointsToSegments } from './stitch-converter';
 
 const GRID_SIZE_MM = 20;
 const PX_PER_MM = 4; // 4 pixels per mm at 1x zoom
@@ -90,222 +91,58 @@ export function drawGrid(
 }
 
 /**
- * Draw a single stitch path
+ * Draw a single stitch path using the stitch-converter for point generation.
+ * All stitch types are rendered as connected stitch segments with needle-
+ * penetration markers, giving a true embroidery preview.
  */
 function drawStitchPath(
   ctx: CanvasRenderingContext2D,
   path: StitchPath,
   zoom: number
 ): void {
-  const points = path.points;
-  if (points.length < 2) return;
+  if (path.points.length < 2) return;
+
+  // Convert the user's vector path into discrete stitch points
+  const stitchPts = convertPathToStitches(path);
+  if (stitchPts.length < 2) return;
+
+  const segments = stitchPointsToSegments(stitchPts);
 
   ctx.strokeStyle = path.color;
-  ctx.lineWidth = Math.max(1.5, 2 / zoom);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  switch (path.stitchType) {
-    case 'run':
-      drawRunStitch(ctx, points, path.density, zoom);
-      break;
-    case 'satin':
-      drawSatinStitch(ctx, points, path.width, path.density, zoom);
-      break;
-    case 'tatami':
-      drawTatamiStitch(ctx, points, path.width, path.density, zoom);
-      break;
-    case 'zigzag':
-      drawZigzagStitch(ctx, points, path.width, path.density, zoom);
-      break;
-    default:
-      drawRunStitch(ctx, points, path.density, zoom);
-  }
-}
-
-/**
- * Run stitch: dashed line with 2.5mm segments
- */
-function drawRunStitch(
-  ctx: CanvasRenderingContext2D,
-  points: Point[],
-  density: number,
-  zoom: number
-): void {
-  const segmentPx = 2.5 * PX_PER_MM / density;
-  ctx.setLineDash([segmentPx, segmentPx * 0.4]);
-  ctx.lineWidth = Math.max(1.5, 2 / zoom);
-  ctx.beginPath();
-  ctx.moveTo(points[0].x * PX_PER_MM, points[0].y * PX_PER_MM);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x * PX_PER_MM, points[i].y * PX_PER_MM);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Draw stitch points
-  for (const p of points) {
-    ctx.fillStyle = ctx.strokeStyle as string;
+  // Draw stitch segments
+  ctx.lineWidth = Math.max(1.2, 1.5 / zoom);
+  for (const seg of segments) {
     ctx.beginPath();
-    ctx.arc(p.x * PX_PER_MM, p.y * PX_PER_MM, 1.5 / zoom, 0, Math.PI * 2);
+    ctx.moveTo(seg.from.x * PX_PER_MM, seg.from.y * PX_PER_MM);
+    ctx.lineTo(seg.to.x * PX_PER_MM, seg.to.y * PX_PER_MM);
+    ctx.stroke();
+  }
+
+  // Draw needle penetration points
+  ctx.fillStyle = path.color;
+  const dotRadius = Math.max(0.8, 1.2 / zoom);
+  for (const p of stitchPts) {
+    ctx.beginPath();
+    ctx.arc(p.x * PX_PER_MM, p.y * PX_PER_MM, dotRadius, 0, Math.PI * 2);
     ctx.fill();
   }
-}
 
-/**
- * Satin stitch: zigzag between two offset paths
- */
-function drawSatinStitch(
-  ctx: CanvasRenderingContext2D,
-  points: Point[],
-  width: number,
-  density: number,
-  zoom: number
-): void {
-  if (points.length < 2) return;
-
-  const satinWidth = (width || 3) * PX_PER_MM;
-  const spacing = (0.4 / density) * PX_PER_MM;
-
-  ctx.lineWidth = Math.max(1, 1.2 / zoom);
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const p1 = { x: points[i].x * PX_PER_MM, y: points[i].y * PX_PER_MM };
-    const p2 = { x: points[i + 1].x * PX_PER_MM, y: points[i + 1].y * PX_PER_MM };
-
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0) continue;
-
-    const nx = -dy / dist;
-    const ny = dx / dist;
-    const steps = Math.max(1, Math.floor(dist / spacing));
-
-    for (let s = 0; s < steps; s++) {
-      const t = s / steps;
-      const cx = p1.x + dx * t;
-      const cy = p1.y + dy * t;
-
-      ctx.beginPath();
-      ctx.moveTo(cx + nx * satinWidth / 2, cy + ny * satinWidth / 2);
-      ctx.lineTo(cx - nx * satinWidth / 2, cy - ny * satinWidth / 2);
-      ctx.stroke();
-    }
-  }
-
-  // Draw center path guide
-  ctx.globalAlpha = 0.3;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(points[0].x * PX_PER_MM, points[0].y * PX_PER_MM);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x * PX_PER_MM, points[i].y * PX_PER_MM);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 1;
-}
-
-/**
- * Tatami stitch: fill pattern with offset rows
- */
-function drawTatamiStitch(
-  ctx: CanvasRenderingContext2D,
-  points: Point[],
-  width: number,
-  density: number,
-  zoom: number
-): void {
-  if (points.length < 2) return;
-
-  const tatamiWidth = (width || 4) * PX_PER_MM;
-  const rowSpacing = (0.5 / density) * PX_PER_MM;
-  const stitchLen = 2 * PX_PER_MM;
-
-  ctx.lineWidth = Math.max(1, 1 / zoom);
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const p1 = { x: points[i].x * PX_PER_MM, y: points[i].y * PX_PER_MM };
-    const p2 = { x: points[i + 1].x * PX_PER_MM, y: points[i + 1].y * PX_PER_MM };
-
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0) continue;
-
-    const nx = -dy / dist;
-    const ny = dx / dist;
-    const rows = Math.max(1, Math.floor(tatamiWidth / rowSpacing));
-
-    for (let r = 0; r < rows; r++) {
-      const offset = (r / rows - 0.5) * tatamiWidth;
-      const rowOffset = (r % 2) * stitchLen * 0.5;
-      const rx = nx * offset;
-      const ry = ny * offset;
-
-      const numStitches = Math.floor(dist / stitchLen);
-      for (let s = 0; s < numStitches; s++) {
-        const t1 = (s * stitchLen + rowOffset) / dist;
-        const t2 = Math.min(((s + 1) * stitchLen + rowOffset) / dist, 1);
-        if (t1 >= 1) break;
-
-        ctx.beginPath();
-        ctx.moveTo(p1.x + dx * t1 + rx, p1.y + dy * t1 + ry);
-        ctx.lineTo(p1.x + dx * t2 + rx, p1.y + dy * t2 + ry);
-        ctx.stroke();
-      }
-    }
-  }
-}
-
-/**
- * ZigZag stitch
- */
-function drawZigzagStitch(
-  ctx: CanvasRenderingContext2D,
-  points: Point[],
-  width: number,
-  density: number,
-  zoom: number
-): void {
-  if (points.length < 2) return;
-
-  const zzWidth = (width || 3) * PX_PER_MM;
-  const spacing = (1.0 / density) * PX_PER_MM;
-
-  ctx.lineWidth = Math.max(1.5, 1.8 / zoom);
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const p1 = { x: points[i].x * PX_PER_MM, y: points[i].y * PX_PER_MM };
-    const p2 = { x: points[i + 1].x * PX_PER_MM, y: points[i + 1].y * PX_PER_MM };
-
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0) continue;
-
-    const nx = -dy / dist;
-    const ny = dx / dist;
-    const steps = Math.max(1, Math.floor(dist / spacing));
-
+  // For satin/tatami/zigzag, also draw a faint guide of the original user path
+  if (path.stitchType !== 'run') {
+    ctx.globalAlpha = 0.2;
+    ctx.setLineDash([3 / zoom, 3 / zoom]);
+    ctx.lineWidth = 1 / zoom;
     ctx.beginPath();
-    for (let s = 0; s <= steps; s++) {
-      const t = s / steps;
-      const cx = p1.x + dx * t;
-      const cy = p1.y + dy * t;
-      const side = s % 2 === 0 ? 1 : -1;
-
-      const px = cx + nx * zzWidth / 2 * side;
-      const py = cy + ny * zzWidth / 2 * side;
-
-      if (s === 0) {
-        ctx.moveTo(px, py);
-      } else {
-        ctx.lineTo(px, py);
-      }
+    ctx.moveTo(path.points[0].x * PX_PER_MM, path.points[0].y * PX_PER_MM);
+    for (let i = 1; i < path.points.length; i++) {
+      ctx.lineTo(path.points[i].x * PX_PER_MM, path.points[i].y * PX_PER_MM);
     }
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
 }
 

@@ -1,4 +1,5 @@
-import { DSTCommand, StitchPath, Point, DesignData } from '../types/embroidery';
+import { DSTCommand, StitchPath, DesignData } from '../types/embroidery';
+import { convertPathToStitches, calculateTotalStitches } from './stitch-converter';
 
 /**
  * Convert mm coordinates to DST units (1 DST unit = 0.1mm)
@@ -8,95 +9,14 @@ function mmToDst(mm: number): number {
 }
 
 /**
- * Generate stitch coordinates along a path based on stitch type
- */
-function generateStitchPoints(path: StitchPath): Point[] {
-  const points = path.points;
-  if (points.length < 2) return points;
-
-  const stitchPoints: Point[] = [];
-  const segmentLength = 2.5 / path.density; // Base 2.5mm segments, modified by density
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const start = points[i];
-    const end = points[i + 1];
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.max(1, Math.floor(dist / segmentLength));
-
-    for (let s = 0; s <= steps; s++) {
-      const t = s / steps;
-      stitchPoints.push({
-        x: start.x + dx * t,
-        y: start.y + dy * t,
-      });
-    }
-  }
-
-  return stitchPoints;
-}
-
-/**
- * Generate satin stitch coordinates (zigzag between two offset paths)
- */
-function generateSatinStitches(path: StitchPath): Point[] {
-  const points = path.points;
-  if (points.length < 2) return points;
-
-  const stitchPoints: Point[] = [];
-  const width = path.width || 3; // Default 3mm satin width
-  const spacing = 0.4 / path.density;
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const start = points[i];
-    const end = points[i + 1];
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.max(1, Math.floor(dist / spacing));
-
-    // Normal vector perpendicular to the path
-    const nx = -dy / dist;
-    const ny = dx / dist;
-
-    for (let s = 0; s <= steps; s++) {
-      const t = s / steps;
-      const cx = start.x + dx * t;
-      const cy = start.y + dy * t;
-
-      if (s % 2 === 0) {
-        stitchPoints.push({ x: cx + nx * width / 2, y: cy + ny * width / 2 });
-      } else {
-        stitchPoints.push({ x: cx - nx * width / 2, y: cy - ny * width / 2 });
-      }
-    }
-  }
-
-  return stitchPoints;
-}
-
-/**
- * Convert paths to DST command array
+ * Convert paths to DST command array.
+ * Uses the stitch-converter as the single source of truth for stitch generation.
  */
 export function pathsToDSTCommands(paths: StitchPath[]): DSTCommand[] {
   const commands: DSTCommand[] = [];
 
   for (const path of paths) {
-    let stitchPoints: Point[];
-
-    switch (path.stitchType) {
-      case 'satin':
-        stitchPoints = generateSatinStitches(path);
-        break;
-      case 'run':
-      case 'tatami':
-      case 'zigzag':
-      default:
-        stitchPoints = generateStitchPoints(path);
-        break;
-    }
-
+    const stitchPoints = convertPathToStitches(path);
     if (stitchPoints.length === 0) continue;
 
     // Move to the first point
@@ -137,23 +57,11 @@ export function pathsToDSTCommands(paths: StitchPath[]): DSTCommand[] {
 }
 
 /**
- * Calculate total stitch count across all paths
+ * Calculate total stitch count across all paths.
+ * Delegates to the stitch-converter.
  */
 export function calculateStitchCount(paths: StitchPath[]): number {
-  let count = 0;
-  for (const path of paths) {
-    let stitchPoints: Point[];
-    switch (path.stitchType) {
-      case 'satin':
-        stitchPoints = generateSatinStitches(path);
-        break;
-      default:
-        stitchPoints = generateStitchPoints(path);
-        break;
-    }
-    count += stitchPoints.length;
-  }
-  return count;
+  return calculateTotalStitches(paths);
 }
 
 /**
