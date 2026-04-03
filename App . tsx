@@ -1,0 +1,56 @@
+// src/App.tsx
+import React, { useState } from 'react';
+import EmbroideryCanvas from './components/EmbroideryCanvas';
+import StitchPanel, { StitchObject } from './components/StitchPanel';
+
+const App: React.FC = () => {
+  // Shared state
+  const [stitches, setStitches] = useState<StitchObject[]>([]);
+  const [selectedStitchId, setSelectedStitchId] = useState<string | null>(null);
+  const [densityMm, setDensityMm] = useState<number>(0.4);
+
+  // Callbacks for StitchPanel
+  const handleDeleteStitch = () => {
+    if (!selectedStitchId) return;
+    setStitches(prev => prev.filter(s => s.id !== selectedStitchId));
+    setSelectedStitchId(null);
+  };
+
+  const handleClearAll = () => {
+    setStitches([]);
+    setSelectedStitchId(null);
+    // Also clear any temporary boundaries/paths inside canvas – we'll pass a reset callback
+  };
+
+  // These will be implemented inside EmbroideryCanvas and exposed via ref or callbacks
+  // For simplicity, we can pass generation functions as props to canvas and call them from panel.
+  // But typically generation is triggered from canvas itself. Here we keep generation inside canvas.
+
+  return (
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {/* Sidebar + Canvas area – you can keep the sidebar inside EmbroideryCanvas or separate */}
+      <EmbroideryCanvas
+        stitches={stitches}
+        setStitches={setStitches}
+        densityMm={densityMm}
+        selectedStitchId={selectedStitchId}
+        setSelectedStitchId={setSelectedStitchId}
+        onClearAll={handleClearAll}
+      />
+      <StitchPanel
+        stitches={stitches}
+        selectedStitchId={selectedStitchId}
+        densityMm={densityMm}
+        onDensityChange={setDensityMm}
+        onSelectStitch={setSelectedStitchId}
+        onDeleteStitch={handleDeleteStitch}
+        onClearAll={handleClearAll}
+        // If you want generation buttons inside panel, pass callbacks that trigger canvas generation
+        // onGenerateSatin={() => canvasRef.current?.generateSatin()}
+        // onGenerateRunning={() => canvasRef.current?.generateRunning()}
+      />
+    </div>
+  );
+};
+
+export default App;
