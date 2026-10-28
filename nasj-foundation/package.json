@@ -1,0 +1,14 @@
+{
+  "name": "nasj-foundation-round-06",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "description": "NASJ foundation with safe persistence, stitch geometry, strict interchange, thread sequencing, and deterministic playback cursor",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "for file in src/*.js test/*.test.js; do node --check \"$file\"; done && node --test test/*.test.js",
+    "test": "node --test test/*.test.js"
+  }
+}

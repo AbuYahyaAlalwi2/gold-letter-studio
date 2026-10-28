@@ -1,0 +1,25 @@
+{
+  "format": "nasj-embroidery-project",
+  "schemaVersion": 1,
+  "metadata": {
+    "id": "legacy-fixture-001",
+    "name": "Legacy sample",
+    "createdAt": "2026-10-23T12:00:00.000Z",
+    "updatedAt": "2026-10-23T12:30:00.000Z"
+  },
+  "design": {
+    "widthMm": 80,
+    "heightMm": 60,
+    "hoop": {
+      "widthMm": 100,
+      "heightMm": 100
+    },
+    "palette": [
+      {
+        "id": "thread-black",
+        "name": "Black",
+        "colorHex": "#000000"
+      }
+    ]
+  }
+}
