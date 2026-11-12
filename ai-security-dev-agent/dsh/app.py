@@ -14,13 +14,13 @@ from fastapi.responses import HTMLResponse
 from jsonschema import Draft7Validator
 from pydantic import BaseModel, Field
 
-from memory.mem0_plugin import Mem0Adapter, ProjectMemory
+from memory.mem0_plugin import Mem0Adapter
 from security.semgrep_wrapper import run_semgrep_scan
 from tools.code_intelligence.grep_tool import grep_code
 from tools.code_intelligence.line_diff_editor import smart_line_diff_edit
 from tools.code_intelligence.tree_sitter_mapper import build_repo_map
 from tools.playwright_mcp import run_playwright_action
-from tools.tool_contract import TOOL_SPECS, build_tool_payload, call_litellm, require_auth, safe_path
+from tools.tool_contract import TOOL_SPECS, build_tool_payload, call_litellm, require_auth
 
 ROOT = Path(os.getenv("PROJECT_ROOT", "/workspace")).resolve()
 DB_PATH = os.getenv("DATABASE_PATH", "/data/agent.sqlite3")
@@ -68,11 +68,22 @@ def db_connect() -> sqlite3.Connection:
 
 
 def validate_tool_args(name: str, args: dict[str, Any]) -> None:
-    spec = TOOL_SPECS[name]
-    validator = Draft7Validator(spec.input_schema)
+    validator = Draft7Validator(TOOL_SPECS[name].input_schema)
     errors = sorted(validator.iter_errors(args), key=lambda e: e.path)
     if errors:
         raise ValueError(errors[0].message)
+
+
+def safe_path(raw: str) -> Path:
+    workspace = ROOT
+    target = Path(raw).expanduser()
+    if not target.is_absolute():
+        target = (workspace / target).resolve()
+    else:
+        target = target.resolve()
+    if workspace not in target.parents and target != workspace:
+        raise ValueError("Path escapes workspace")
+    return target
 
 
 def invoke_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -162,9 +173,14 @@ async def chat(request: ChatRequest, auth: str | None = Header(default=None)) ->
         history.append({"role": "user", "content": request.message})
 
     tools_payload = build_tool_payload()
-    model_response = await call_litellm(history, tools_payload)
+    try:
+        model_response = await call_litellm(history, tools_payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Model gateway unavailable: {exc}") from exc
+
     if "choices" not in model_response:
         raise HTTPException(status_code=502, detail="Model gateway failed to produce a response")
+
     message = model_response["choices"][0]["message"]
     history.append(message)
 
@@ -175,9 +191,9 @@ async def chat(request: ChatRequest, auth: str | None = Header(default=None)) ->
         for call in calls:
             try:
                 tool_name = call["function"]["name"]
-                arguments = json.loads(call["function"].get("arguments", "{}"))
-                result = invoke_tool(tool_name, arguments)
-            except Exception as exc:  # pragma: no cover - keep operation safe
+                tool_args = json.loads(call["function"].get("arguments", "{}"))
+                result = invoke_tool(tool_name, tool_args)
+            except Exception as exc:
                 result = {"error": str(exc)}
             history.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, ensure_ascii=False)[:20000]})
         model_response = await call_litellm(history, tools_payload)

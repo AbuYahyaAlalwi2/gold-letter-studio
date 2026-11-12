@@ -33,7 +33,8 @@ def run_semgrep_scan(path: str, rules: list[str] | None = None) -> dict[str, Any
         raise FileNotFoundError(path)
 
     args = ["semgrep", "scan", "--json", "--metrics=off", "--quiet"]
-    for rule in rules or ["p/security-audit"]:
+    selected_rules = rules or ["p/security-audit"]
+    for rule in selected_rules:
         if not rule or len(rule) > 200 or rule.startswith("-"):
             raise ValueError(f"Invalid Semgrep rule: {rule!r}")
         args.extend(["--config", rule])

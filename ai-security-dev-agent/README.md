@@ -1,84 +1,106 @@
 # AI Security & Dev Agent
+# Local-first blueprint for a modular AI security and engineering assistant.
 
-A defensive, local-first security and development assistant scaffold. It keeps analysis tools inside a configured workspace, requires a dashboard bearer token, routes chat through LiteLLM, and persists sessions and project notes in SQLite. It is designed for authorized code review and testing only.
+## Architecture
 
-> This is a self-hostable starter application, not a certified security product. Review the security notes before exposing it beyond localhost. The current backend is a small FastAPI harness; it is not the upstream DeepSeek Harness/Cordis implementation.
+- DSH: FastAPI dashboard + session manager + tool registry
+- LiteLLM: unified model gateway with local Ollama + hosted fallback
+- Playwright MCP: browser automation and accessibility inspection
+- Semgrep Wrapper: strict JSON security scanning output
+- Memory: SQLite-backed long-term project memory with Mem0 adapter support
+- Sandbox: hardened, volume-isolated worker space
 
-## Components
+## Repository layout
 
-- **Harness API / dashboard:** FastAPI service, bearer-token authentication, chat/tool loop, SQLite sessions.
-- **Code tools:** bounded grep, file listing, repository map (Tree-sitter when supported), exact-match edits.
-- **Model gateway:** LiteLLM with local Ollama and optional OpenAI fallback.
-- **Static analysis:** Semgrep wrapper with strict JSON result schema.
-- **Browser:** official Playwright MCP server is available as a separate service; it is not exposed to the public host by default.
-- **Memory:** persistent SQLite project memory with a clear adapter boundary for a Mem0 deployment. This compose setup does not pretend a mock is a Mem0 server.
-- **Sandbox:** Compose hardening, no privileged mode, dropped capabilities, read-only container filesystems where applicable, and a dedicated workspace mount. No arbitrary shell tool is provided to the model.
+```text
+ai-security-dev-agent/
+├── .env.example
+├── .github/
+│   └── workflows/
+│       └── smoke.yml
+├── README.md
+├── docker-compose.yml
+├── Makefile
+├── dsh/
+│   ├── Dockerfile
+│   ├── __init__.py
+│   ├── app.py
+│   └── requirements.txt
+├── llm-proxy/
+│   └── config.yaml
+├── memory/
+│   ├── __init__.py
+│   └── mem0_plugin.py
+├── security/
+│   ├── __init__.py
+│   └── semgrep_wrapper.py
+├── tests/
+│   └── test_smoke.py
+├── tools/
+│   ├── __init__.py
+│   ├── code_intelligence/
+│   │   ├── __init__.py
+│   │   ├── grep_tool.py
+│   │   ├── line_diff_editor.py
+│   │   └── tree_sitter_mapper.py
+│   ├── playwight_mcp.py
+│   ├── playwight_mcp.py
+│   ├── tool_contract.py
+│   └── playwright_mcp.py
+└── workspace/
+    └── .gitkeep
+```
 
-## Requirements
+## Quick start
 
-Docker Engine with the Compose plugin, at least 8 GB RAM for local Ollama, and a model key only if you enable a hosted provider.
-
-## Start
+1. Copy `.env.example` to `.env` and replace secrets.
+2. Run:
 
 ```bash
 cd ai-security-dev-agent
 cp .env.example .env
-# Edit .env and replace DASHBOARD_TOKEN with a long random secret.
-docker compose up --build -d
+make up
 ```
 
-Pull a local model (default configuration):
+3. Open the dashboard at:
+
+```text
+http://127.0.0.1:8080/
+```
+
+4. To stop:
 
 ```bash
-docker compose exec ollama ollama pull llama3.1
+make down
 ```
 
-Dashboard/API: `http://localhost:8080/` (send `Authorization: Bearer <DASHBOARD_TOKEN>`). Health check: `http://localhost:8080/health`.
+## Environment
 
-Example authenticated request:
+Set these variables in `.env` before starting:
+
+```dotenv
+DASHBOARD_TOKEN=replace-with-a-long-random-secret
+LITELLM_MASTER_KEY=replace-with-another-random-secret
+DEFAULT_MODEL=local-model
+OPENAI_API_KEY=
+OLLAMA_BASE_URL=http://ollama:11434
+PROJECT_ROOT=/workspace
+```
+
+## Security notes
+
+- Services are isolated on an internal Docker network.
+- The DSH service requires a bearer token on every protected API route.
+- The Compose stack does not expose browser automation to the public internet by default.
+- Memory is persisted locally and can be swapped with a proper Mem0 deployment later.
+- Do not run untrusted code in a sensitive environment without a dedicated sandbox/VM boundary.
+
+## CI / validation
+
+The repository includes a smoke workflow that validates imports and container config.
 
 ```bash
-curl -H "Authorization: Bearer $DASHBOARD_TOKEN" http://localhost:8080/api/tools
+cd ai-security-dev-agent
+pytest -q
+docker compose config
 ```
-
-To chat, `POST /api/chat` with JSON `{"message":"Review the project for common security issues","project":"demo"}`. The agent can call only the registered bounded tools. Put the authorized target repository under `workspace/` first.
-
-Stop without deleting persistent data:
-
-```bash
-docker compose down
-```
-
-`docker compose down -v` deletes the database and Ollama model volume.
-
-## Configuration
-
-Copy `.env.example` to `.env`. Never commit `.env` or paste secrets into source files. Set `DASHBOARD_TOKEN` to a unique random value. To enable OpenAI fallback, set `OPENAI_API_KEY`; otherwise the local Ollama model is used. Change model names in `llm-proxy/config.yaml` to match providers you configured. Keep the LiteLLM admin key private.
-
-## API
-
-- `GET /health` — unauthenticated liveness check.
-- `GET /` — dashboard/API usage information (authentication required).
-- `GET /api/tools`, `GET /api/sessions`, `GET /api/sessions/{id}` — authenticated API.
-- `POST /api/chat` — authenticated chat with bounded tool execution.
-- `POST /api/tools/{name}` — authenticated direct invocation for registered tools.
-
-## Security boundaries and limitations
-
-- Bind host ports to `127.0.0.1` by default. Put a TLS reverse proxy and network controls in front before remote use.
-- The auth token is a shared bearer secret, not user identity management, CSRF protection, or rate limiting. Rotate it if exposed.
-- The workspace is mounted read/write so approved edits can be made. Do not mount sensitive host directories or a Docker socket.
-- Semgrep and browser automation process untrusted project/web content. Use an isolated host/VM for untrusted targets; do not browse arbitrary untrusted URLs from a sensitive network.
-- Browser MCP runs in its own container and is not included as a callable chat tool yet. Do not assume arbitrary JavaScript/network inspection is wired into the agent API.
-- SQLite memory is local persistent project notes, not the Mem0 product. The adapter can be replaced with a secured Mem0 deployment.
-- This project does not execute arbitrary shell commands. Tool execution is limited to declared operations.
-- Run tests and inspect Compose configuration before deployment; this repository update cannot validate your Docker host, provider keys, model availability, or network policy.
-
-## Development / tests
-
-```bash
-python -m pip install -r dsh/requirements.txt
-python -m pytest -q
-```
-
-The included unit tests run without external services. For full-stack validation use `docker compose config` and `docker compose up --build` on your own host.

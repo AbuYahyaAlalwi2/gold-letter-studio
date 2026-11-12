@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
 
-try:
+try:  # pragma: no cover
     import tree_sitter_language_pack  # type: ignore
 except Exception:  # pragma: no cover
     tree_sitter_language_pack = None  # type: ignore

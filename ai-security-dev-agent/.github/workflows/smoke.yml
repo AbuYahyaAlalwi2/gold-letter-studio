@@ -1,0 +1,33 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r ai-security-dev-agent/dsh/requirements.txt
+
+      - name: Run unit tests
+        run: |
+          cd ai-security-dev-agent
+          pytest -q
+
+      - name: Validate Docker compose
+        run: |
+          cd ai-security-dev-agent
+          docker compose config >/dev/null

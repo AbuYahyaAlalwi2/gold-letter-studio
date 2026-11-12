@@ -1,13 +1,15 @@
 # AI Security & Dev Agent
-# Local-first scaffold for an AI security and dev assistant.
+# Local-first scaffold for a secure, modular AI security assistant.
 
 version: "3.9"
 
 services:
   dsh:
     build:
-      context: ./dsh
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./dsh/Dockerfile
+    env_file:
+      - .env
     environment:
       DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?Set DASHBOARD_TOKEN in .env}
       PORT: 8080
@@ -16,9 +18,8 @@ services:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-local-model}
-      SEMGREP_TIMEOUT_SECONDS: ${SEMGREP_TIMEOUT_SECONDS:-120}
-      PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931
       MEM0_URL: http://mem0:8000
+      PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -28,6 +29,12 @@ services:
       - litellm
       - playwright-mcp
       - mem0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     read_only: true
     tmpfs:
       - /tmp:size=64m,noexec,nosuid
@@ -103,9 +110,9 @@ services:
     command: >-
       sh -lc "python -m pip install --no-cache-dir mem0ai fastapi uvicorn &&
       python - <<'PY'
+      import json, os, sqlite3, uvicorn
       from fastapi import FastAPI
       from pydantic import BaseModel
-      import sqlite3, json, os
       app = FastAPI(title='mem0-agent-store')
       DB = os.environ.get('MEM0_STORE_PATH', '/data/mem0.db')
       with sqlite3.connect(DB) as db:
@@ -124,7 +131,7 @@ services:
           with sqlite3.connect(DB) as db:
               rows = db.execute('SELECT fact, metadata, created_at FROM memories WHERE project = ? ORDER BY id DESC LIMIT ?', (project, limit)).fetchall()
           return [{'fact': r[0], 'metadata': json.loads(r[1]), 'created_at': r[2]} for r in rows]
-      import uvicorn; uvicorn.run(app, host='0.0.0.0', port=8000)
+      uvicorn.run(app, host='0.0.0.0', port=8000)
       PY"
     volumes:
       - agent-data:/data

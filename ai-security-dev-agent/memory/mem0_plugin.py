@@ -7,11 +7,7 @@ from typing import Any
 
 
 class ProjectMemory:
-    """Persistent local memory adapter used as a safe fallback.
-
-    The real Mem0 service can be configured later via a production adapter, but local
-    SQLite persists structured project memories across sessions with a simple API.
-    """
+    """Local SQLite memory adapter used as a safe default."""
 
     def __init__(self, database_path: str):
         self.database_path = database_path
@@ -67,24 +63,18 @@ class ProjectMemory:
         ]
 
     def project_summary(self, project: str) -> dict[str, Any]:
-        return {
-            "project": project,
-            "facts": self.recall(project, limit=20),
-            "count": len(self.recall(project, limit=20)),
-        }
+        facts = self.recall(project, limit=20)
+        return {"project": project, "facts": facts, "count": len(facts)}
 
 
-try:
-    from mem0 import MemoryClient  # type: ignore  # pragma: no cover
+try:  # pragma: no cover
+    from mem0 import MemoryClient  # type: ignore
 except Exception:  # pragma: no cover
     MemoryClient = None  # type: ignore
 
 
 class Mem0Adapter:
-    """Production adapter to the official Mem0 library when available.
-
-    Falls back to the persistent SQLite project memory to keep local-development startup safe.
-    """
+    """Production-safe adapter with a SQLite fallback for local operation."""
 
     def __init__(self, database_path: str, base_url: str | None = None):
         self.database_path = database_path
@@ -112,4 +102,3 @@ class Mem0Adapter:
 
     def project_summary(self, project: str) -> dict[str, Any]:
         return self._fallback.project_summary(project)
-
