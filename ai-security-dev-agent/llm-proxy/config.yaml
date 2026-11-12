@@ -1,13 +1,15 @@
+# LiteLLM model routing config
 model_list:
   - model_name: local-model
     litellm_params:
-      model: ollama/llama3.1
-      api_base: os.environ/OLLAMA_BASE_URL
+      model: ollama_chat/llama3.1
+      api_base: http://ollama:11434
       api_key: ollama
   - model_name: hosted-model
     litellm_params:
-      model: openai/gpt-4o-mini
+      model: gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
+      api_base: https://api.openai.com/v1
 
 router_settings:
   routing_strategy: simple-shuffle

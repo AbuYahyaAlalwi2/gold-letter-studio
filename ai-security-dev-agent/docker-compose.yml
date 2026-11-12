@@ -1,6 +1,13 @@
+# AI Security & Dev Agent
+# Local-first scaffold for an AI security and dev assistant.
+
+version: "3.9"
+
 services:
   dsh:
-    build: ./dsh
+    build:
+      context: ./dsh
+      dockerfile: Dockerfile
     environment:
       DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?Set DASHBOARD_TOKEN in .env}
       PORT: 8080
@@ -10,21 +17,26 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-local-model}
       SEMGREP_TIMEOUT_SECONDS: ${SEMGREP_TIMEOUT_SECONDS:-120}
+      PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931
+      MEM0_URL: http://mem0:8000
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./workspace:/workspace:rw
       - agent-data:/data
     depends_on:
-      litellm:
-        condition: service_started
+      - litellm
+      - playwright-mcp
+      - mem0
     read_only: true
     tmpfs:
       - /tmp:size=64m,noexec,nosuid
     security_opt:
       - no-new-privileges:true
-    cap_drop: [ALL]
-    networks: [backend]
+    cap_drop:
+      - ALL
+    networks:
+      - backend
     restart: unless-stopped
 
   litellm:
@@ -36,44 +48,107 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
     volumes:
       - ./llm-proxy/config.yaml:/app/config.yaml:ro
-    expose: ["4000"]
-    depends_on: [ollama]
+    expose:
+      - "4000"
+    depends_on:
+      - ollama
     read_only: true
-    tmpfs: [/tmp:size=128m]
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    networks: [backend]
+    tmpfs:
+      - /tmp:size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
     restart: unless-stopped
 
   ollama:
     image: ollama/ollama:0.5.7
     volumes:
       - ollama-data:/root/.ollama
-    expose: ["11434"]
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    networks: [backend]
+    expose:
+      - "11434"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
     restart: unless-stopped
 
   playwright-mcp:
     image: mcr.microsoft.com/playwright:v1.49.1-jammy
     working_dir: /app
     entrypoint: ["npx", "--yes", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "8931"]
-    expose: ["8931"]
+    expose:
+      - "8931"
     init: true
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
     shm_size: 1gb
-    networks: [backend]
-    profiles: [browser]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
+    profiles:
+      - browser
+    restart: unless-stopped
+
+  mem0:
+    image: python:3.12-slim
+    working_dir: /app
+    environment:
+      MEM0_STORE_PATH: /data/mem0.db
+    command: >-
+      sh -lc "python -m pip install --no-cache-dir mem0ai fastapi uvicorn &&
+      python - <<'PY'
+      from fastapi import FastAPI
+      from pydantic import BaseModel
+      import sqlite3, json, os
+      app = FastAPI(title='mem0-agent-store')
+      DB = os.environ.get('MEM0_STORE_PATH', '/data/mem0.db')
+      with sqlite3.connect(DB) as db:
+          db.execute('CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT, fact TEXT, metadata TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+      class Memo(BaseModel):
+          project: str
+          fact: str
+          metadata: dict = {}
+      @app.post('/remember')
+      def remember(item: Memo):
+          with sqlite3.connect(DB) as db:
+              db.execute('INSERT INTO memories(project, fact, metadata) VALUES (?, ?, ?)', (item.project, item.fact[:2000], json.dumps(item.metadata)))
+          return {'status': 'ok'}
+      @app.get('/recall')
+      def recall(project: str, limit: int = 20):
+          with sqlite3.connect(DB) as db:
+              rows = db.execute('SELECT fact, metadata, created_at FROM memories WHERE project = ? ORDER BY id DESC LIMIT ?', (project, limit)).fetchall()
+          return [{'fact': r[0], 'metadata': json.loads(r[1]), 'created_at': r[2]} for r in rows]
+      import uvicorn; uvicorn.run(app, host='0.0.0.0', port=8000)
+      PY"
+    volumes:
+      - agent-data:/data
+    expose:
+      - "8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
+    restart: unless-stopped
 
   semgrep:
     image: returntocorp/semgrep:1.101.0
     entrypoint: ["sleep", "infinity"]
-    profiles: [scanner-cli]
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    networks: [backend]
+    profiles:
+      - scanner-cli
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
 
 volumes:
   agent-data:
