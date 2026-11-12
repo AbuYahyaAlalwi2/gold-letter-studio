@@ -1,132 +1,84 @@
-version: "3.9"
-
 services:
   dsh:
-    build:
-      context: ./dsh
-    env_file:
-      - .env
+    build: ./dsh
     environment:
-      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN}
-      PORT: ${PORT:-8080}
-      LITELLM_URL: ${LITELLM_URL:-http://litellm:4000}
-      PLAYWRIGHT_MCP_URL: ${PLAYWRIGHT_MCP_URL:-http://playwright-mcp:8931}
-      MEM0_URL: ${MEM0_URL:-http://mem0:8000}
-      PROJECT_ROOT: ${PROJECT_ROOT:-/workspace}
+      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?Set DASHBOARD_TOKEN in .env}
+      PORT: 8080
+      PROJECT_ROOT: /workspace
+      DATABASE_PATH: /data/agent.sqlite3
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-local-model}
+      SEMGREP_TIMEOUT_SECONDS: ${SEMGREP_TIMEOUT_SECONDS:-120}
     ports:
-      - "8080:8080"
-    depends_on:
-      - litellm
-      - playwright-mcp
-      - mem0
-      - semgrep
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./workspace:/workspace:rw
-    networks:
-      - ai-agent-net
+      - agent-data:/data
+    depends_on:
+      litellm:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [backend]
+    restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    env_file:
-      - .env
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    image: ghcr.io/berriai/litellm:v1.63.14-stable
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
     volumes:
       - ./llm-proxy/config.yaml:/app/config.yaml:ro
-    ports:
-      - "4000:4000"
-    environment:
-      OPENAI_API_KEY: ${LITELLM_API_KEY}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - ai-agent-net
+    expose: ["4000"]
+    depends_on: [ollama]
+    read_only: true
+    tmpfs: [/tmp:size=128m]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [backend]
+    restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.7
     volumes:
       - ollama-data:/root/.ollama
-    ports:
-      - "11434:11434"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - ai-agent-net
+    expose: ["11434"]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [backend]
+    restart: unless-stopped
 
   playwright-mcp:
-    build:
-      context: ./browser
-    ports:
-      - "8931:8931"
-    command: ["npx", "@playwright/mcp", "--host", "0.0.0.0", "--port", "8931"]
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - ai-agent-net
+    image: mcr.microsoft.com/playwright:v1.49.1-jammy
+    working_dir: /app
+    entrypoint: ["npx", "--yes", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "8931"]
+    expose: ["8931"]
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    shm_size: 1gb
+    networks: [backend]
+    profiles: [browser]
 
   semgrep:
-    image: returntocorp/semgrep:latest
+    image: returntocorp/semgrep:1.101.0
     entrypoint: ["sleep", "infinity"]
-    working_dir: /workspace
-    volumes:
-      - ./workspace:/workspace:rw
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - ai-agent-net
-
-  mem0:
-    image: python:3.12-slim
-    working_dir: /app
-    env_file:
-      - .env
-    command: >-
-      sh -lc "pip install --no-cache-dir mem0ai fastapi uvicorn &&
-      python -m mem0.server --host 0.0.0.0 --port 8000"
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./memory:/app
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - ai-agent-net
-
-  sandbox:
-    build:
-      context: ./sandbox
-    environment:
-      SANDBOX_TIMEOUT_SECONDS: ${SANDBOX_TIMEOUT_SECONDS:-180}
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp
-    networks:
-      - ai-agent-net
+    profiles: [scanner-cli]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [backend]
 
 volumes:
+  agent-data:
   ollama-data:
 
 networks:
-  ai-agent-net:
-    driver: bridge
+  backend:
+    internal: true

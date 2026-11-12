@@ -1,16 +1,19 @@
-DOCKER_COMPOSE := docker compose
+PYTHON ?= python3
+COMPOSE ?= docker compose
 
-.PHONY: up down build logs ps
-
+.PHONY: up down logs test config
 up:
-	@cp -n .env.example .env 2>/dev/null || true
-	$(DOCKER_COMPOSE) up --build -d
-
-logs:
-	$(DOCKER_COMPOSE) logs -f
-
-ps:
-	$(DOCKER_COMPOSE) ps
+	@test -f .env || (cp .env.example .env && echo 'Edit .env and set secrets, then run make up again.' && exit 1)
+	$(COMPOSE) up --build -d
 
 down:
-	$(DOCKER_COMPOSE) down -v
+	$(COMPOSE) down
+
+logs:
+	$(COMPOSE) logs -f --tail=200
+
+test:
+	$(PYTHON) -m pytest -q
+
+config:
+	$(COMPOSE) config

@@ -1,30 +1,21 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from typing import Any
 
-
-class Mem0Plugin:
-    """Minimal Mem0-compatible plugin for persistent project memory across sessions."""
-
-    def __init__(self, base_path: str = "/tmp/mem0") -> None:
-        self.base_path = base_path
-        self._store: dict[str, list[dict[str, Any]]] = {}
-
-    def remember(self, project_name: str, fact: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
-        if project_name not in self._store:
-            self._store[project_name] = []
-
-        entry = {"fact": fact, "metadata": metadata or {}, "source": "agent"}
-        self._store[project_name].append(entry)
-        return {"project": project_name, "stored": True, "count": len(self._store[project_name])}
-
-    def recall(self, project_name: str) -> list[dict[str, Any]]:
-        return self._store.get(project_name, [])
-
-    def project_summary(self, project_name: str) -> dict[str, Any]:
-        facts = self.recall(project_name)
-        return {
-            "project": project_name,
-            "fact_count": len(facts),
-            "facts": [f["fact"] for f in facts],
-        }
+class ProjectMemory:
+    """Persistent local project memory backed by SQLite; replaceable with a Mem0 adapter."""
+    def __init__(self, database_path: str):
+        self.database_path = database_path
+        with sqlite3.connect(database_path) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS project_memory (id INTEGER PRIMARY KEY, project TEXT NOT NULL, fact TEXT NOT NULL, metadata TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    def remember(self, project: str, fact: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        with sqlite3.connect(self.database_path) as db:
+            db.execute("INSERT INTO project_memory(project,fact,metadata) VALUES(?,?,?)", (project, fact[:2000], json.dumps(metadata or {})))
+            count = db.execute("SELECT COUNT(*) FROM project_memory WHERE project=?", (project,)).fetchone()[0]
+        return {"project": project, "stored": True, "count": count}
+    def recall(self, project: str, limit: int = 20) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.database_path) as db:
+            rows = db.execute("SELECT fact,metadata,created_at FROM project_memory WHERE project=? ORDER BY id DESC LIMIT ?", (project, min(max(limit, 1), 100))).fetchall()
+        return [{"fact": fact, "metadata": json.loads(metadata), "created_at": created} for fact, metadata, created in rows]

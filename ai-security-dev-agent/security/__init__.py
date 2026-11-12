@@ -1,1 +1,1 @@
-"""Security tools package."""
+"""Semgrep wrapper package."""

@@ -1,36 +1,27 @@
-import os
+from __future__ import annotations
+
+import fnmatch
 import re
 from pathlib import Path
 
+IGNORED = {".git", ".venv", "node_modules", "__pycache__", "dist", "build"}
 
-def grep_code(path: str, pattern: str, include: str = "**/*.*", max_results: int = 50) -> list[dict[str, object]]:
-    """Perform a targeted content grep across the repo and return a compact result list."""
-    root = Path(path)
-    matches: list[dict[str, object]] = []
+def grep_code(path: str, pattern: str, include: str = "**/*", max_results: int = 50) -> list[dict[str, object]]:
+    root = Path(path).resolve()
     regex = re.compile(pattern)
-
-    for file_path in root.rglob("*"):
-        if not file_path.is_file():
+    results: list[dict[str, object]] = []
+    for file in root.rglob("*"):
+        if not file.is_file() or any(part in IGNORED for part in file.parts):
             continue
-        rel = file_path.relative_to(root)
-        if not re.match(include.replace("**", ".*"), str(rel).replace(os.sep, "/")):
+        rel = file.relative_to(root).as_posix()
+        if include != "**/*" and not fnmatch.fnmatch(rel, include):
             continue
-
         try:
-            content = file_path.read_text(encoding="utf-8")
+            for number, line in enumerate(file.read_text(encoding="utf-8").splitlines(), 1):
+                if regex.search(line):
+                    results.append({"file": rel, "line": number, "content": line.strip()[:500]})
+                    if len(results) >= max_results:
+                        return results
         except (UnicodeDecodeError, OSError):
             continue
-
-        for line_number, line in enumerate(content.splitlines(), start=1):
-            if regex.search(line):
-                matches.append(
-                    {
-                        "file": str(rel).replace(os.sep, "/"),
-                        "line": line_number,
-                        "content": line.strip(),
-                    }
-                )
-                if len(matches) >= max_results:
-                    return matches
-
-    return matches
+    return results

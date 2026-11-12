@@ -1,56 +1,44 @@
 from __future__ import annotations
 
-import ast
+import os
 from pathlib import Path
 from typing import Any
 
+SKIP = {".git", ".venv", "node_modules", "__pycache__", "dist", "build"}
+
 
 def build_repo_map(path: str, max_depth: int = 3) -> dict[str, Any]:
-    """Create a lightweight repository map without loading the entire project into memory."""
-    root = Path(path)
-    files: list[str] = []
-    entrypoints: list[str] = []
-    top_level: list[str] = []
-
-    for current in sorted(root.rglob("*")):
-        if current.is_dir():
-            if current.name.startswith("."):
-                continue
-            continue
-
-        rel = current.relative_to(root).as_posix()
-        files.append(rel)
-        if rel.lower().endswith((".py", ".js", ".ts", ".tsx")):
-            entrypoints.append(rel)
-
-    for child in sorted(root.iterdir()):
-        if child.is_dir() and not child.name.startswith("."):
-            top_level.append(child.name)
-
-    return {
-        "root": str(root),
-        "max_depth": max_depth,
-        "top_level_dirs": top_level,
-        "file_count": len(files),
-        "entrypoints": entrypoints[:25],
-        "summary": {"files": files[:25]},
-    }
-
-
-def extract_symbols_from_file(file_path: str) -> list[str]:
-    """Best-effort symbol extraction, primarily for Python files."""
-    path = Path(file_path)
-    if not path.exists():
-        return []
-
-    try:
-        source = path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        return []
-
-    tree = ast.parse(source)
-    symbols: list[str] = []
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            symbols.append(node.name)
-    return symbols
+    root = Path(path).resolve()
+    entries: list[dict[str, Any]] = []
+    for current, dirs, files in os.walk(root):
+        rel_dir = Path(current).relative_to(root)
+        depth = len(rel_dir.parts)
+        dirs[:] = sorted(d for d in dirs if d not in SKIP and not d.startswith(".")) if depth < max_depth else []
+        for name in sorted(files):
+            file = Path(current) / name
+            rel = file.relative_to(root).as_posix()
+            item: dict[str, Any] = {"path": rel}
+            if file.suffix in {".py", ".js", ".ts", ".tsx", ".go", ".rs"}:
+                try:
+                    from tree_sitter_language_pack import get_parser
+                    parser = get_parser({".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx", ".go": "go", ".rs": "rust"}[file.suffix])
+                    tree = parser.parse(file.read_bytes())
+                    names: list[str] = []
+                    stack = [tree.root_node]
+                    while stack:
+                        node = stack.pop()
+                        if node.type in {"function_definition", "class_definition", "function_declaration", "class_declaration", "method_definition", "struct_item", "function_item"}:
+                            identifier = next((c for c in node.children if "identifier" in c.type or c.type == "type_identifier"), None)
+                            if identifier:
+                                names.append(identifier.text.decode("utf-8", "replace"))
+                        stack.extend(reversed(node.children))
+                    if names:
+                        item["symbols"] = names[:50]
+                except Exception:
+                    pass
+            entries.append(item)
+            if len(entries) >= 5000:
+                break
+        if len(entries) >= 5000:
+            break
+    return {"root": str(root), "file_count": len(entries), "files": entries}
