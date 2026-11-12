@@ -1,106 +1,46 @@
-# AI Security & Dev Agent
-# Local-first blueprint for a modular AI security and engineering assistant.
+# AI Security & Dev Agent — DeepSeek Harness web UI + LiteLLM model connection
 
-## Architecture
+This deployment uses the **official DeepSeek Harness web profile** as the browser UI and agent runtime. LiteLLM provides one OpenAI-compatible endpoint for a configured model provider. This replaces the earlier FastAPI mock UI; it does not claim that every optional security/memory component has been integrated into DSH.
 
-- DSH: FastAPI dashboard + session manager + tool registry
-- LiteLLM: unified model gateway with local Ollama + hosted fallback
-- Playwright MCP: browser automation and accessibility inspection
-- Semgrep Wrapper: strict JSON security scanning output
-- Memory: SQLite-backed long-term project memory with Mem0 adapter support
-- Sandbox: hardened, volume-isolated worker space
+## Connect your API model
 
-## Repository layout
+1. Copy `.env.example` to `.env`.
+2. Edit `UPSTREAM_API_BASE`, `UPSTREAM_API_KEY`, and `UPSTREAM_MODEL` for your provider. The example values are for an OpenAI-compatible endpoint. Set the model in LiteLLM's provider-prefixed form (for example `openai/model-name`; check your provider's LiteLLM adapter if it is not OpenAI-compatible).
+3. Set `LITELLM_MASTER_KEY` to a long random secret. Never commit `.env`.
+4. Start the application:
 
-```text
-ai-security-dev-agent/
-├── .env.example
-├── .github/
-│   └── workflows/
-│       └── smoke.yml
-├── README.md
-├── docker-compose.yml
-├── Makefile
-├── dsh/
-│   ├── Dockerfile
-│   ├── __init__.py
-│   ├── app.py
-│   └── requirements.txt
-├── llm-proxy/
-│   └── config.yaml
-├── memory/
-│   ├── __init__.py
-│   └── mem0_plugin.py
-├── security/
-│   ├── __init__.py
-│   └── semgrep_wrapper.py
-├── tests/
-│   └── test_smoke.py
-├── tools/
-│   ├── __init__.py
-│   ├── code_intelligence/
-│   │   ├── __init__.py
-│   │   ├── grep_tool.py
-│   │   ├── line_diff_editor.py
-│   │   └── tree_sitter_mapper.py
-│   ├── playwight_mcp.py
-│   ├── playwight_mcp.py
-│   ├── tool_contract.py
-│   └── playwright_mcp.py
-└── workspace/
-    └── .gitkeep
+```sh
+docker compose up --build -d
 ```
 
-## Quick start
+5. Inspect startup logs for the `dsh web:` URL and open it in your browser. The process URL contains a short-lived access credential; do not share it. The listener is localhost-only by default: `http://localhost:3080/`.
 
-1. Copy `.env.example` to `.env` and replace secrets.
-2. Run:
+The DSH profile uses LiteLLM at `http://litellm:4000/v1`, exposes the configured `gateway-model`, and sends `LITELLM_MASTER_KEY` to that internal gateway. The upstream provider key is only passed to LiteLLM. The API key is not stored in Git or placed in the DSH patch.
 
-```bash
-cd ai-security-dev-agent
-cp .env.example .env
-make up
-```
+## Verify
 
-3. Open the dashboard at:
-
-```text
-http://127.0.0.1:8080/
-```
-
-4. To stop:
-
-```bash
-make down
-```
-
-## Environment
-
-Set these variables in `.env` before starting:
-
-```dotenv
-DASHBOARD_TOKEN=replace-with-a-long-random-secret
-LITELLM_MASTER_KEY=replace-with-another-random-secret
-DEFAULT_MODEL=local-model
-OPENAI_API_KEY=
-OLLAMA_BASE_URL=http://ollama:11434
-PROJECT_ROOT=/workspace
-```
-
-## Security notes
-
-- Services are isolated on an internal Docker network.
-- The DSH service requires a bearer token on every protected API route.
-- The Compose stack does not expose browser automation to the public internet by default.
-- Memory is persisted locally and can be swapped with a proper Mem0 deployment later.
-- Do not run untrusted code in a sensitive environment without a dedicated sandbox/VM boundary.
-
-## CI / validation
-
-The repository includes a smoke workflow that validates imports and container config.
-
-```bash
-cd ai-security-dev-agent
-pytest -q
+```sh
 docker compose config
+docker compose ps
+docker compose logs --tail=100 dsh litellm
 ```
+
+Then use the DSH UI's Settings → Models to confirm the configured gateway model is available. To stop without deleting persistent DSH profile/session data:
+
+```sh
+docker compose down
+```
+
+## VPS / reverse proxy
+
+The default is intentionally bound to loopback. For a VPS, configure `DSH_PUBLIC_URL=https://your-domain/` and `DSH_TRUSTED_HOST=your-domain`, place a TLS-terminating reverse proxy in front, and expose the host-side DSH port only to that proxy/firewall. Follow the official DSH public deployment guidance for proxy headers, host/origin validation, and TLS. Do not expose LiteLLM's port publicly.
+
+## Scope and limitations
+
+This commit wires the official DSH web app to one configurable LiteLLM OpenAI-compatible route. It does **not** make Semgrep, repository tools, Playwright MCP, or Mem0 callable from DSH unless those integrations are separately installed/configured as DSH Cordis plugins or MCP servers. The existing Python prototype files remain reference code and are not the DSH web runtime. No Docker build, provider API call, or live smoke test can be run from this GitHub-only environment; validate with the commands above on your host.
+
+Official references:
+
+- DSH Web: https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/bundle/web-app
+- DSH model routing: https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/llm/llm-pi-ai
+- LiteLLM: https://docs.litellm.ai/

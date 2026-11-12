@@ -1,166 +1,50 @@
-# AI Security & Dev Agent
-# Local-first scaffold for a secure, modular AI security assistant.
-
-version: "3.9"
+name: ai-security-dev-agent
 
 services:
   dsh:
     build:
-      context: .
-      dockerfile: ./dsh/Dockerfile
-    env_file:
-      - .env
+      context: ./dsh
+      dockerfile: Dockerfile
     environment:
-      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?Set DASHBOARD_TOKEN in .env}
-      PORT: 8080
-      PROJECT_ROOT: /workspace
-      DATABASE_PATH: /data/agent.sqlite3
-      LITELLM_URL: http://litellm:4000
+      DSH_HOME: /data/dsh
+      DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://localhost:3080/}
+      DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-localhost}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
-      DEFAULT_MODEL: ${DEFAULT_MODEL:-local-model}
-      MEM0_URL: http://mem0:8000
-      PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:3080:3080"
     volumes:
+      - dsh-data:/data
       - ./workspace:/workspace:rw
-      - agent-data:/data
     depends_on:
-      - litellm
-      - playwright-mcp
-      - mem0
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,noexec,nosuid
+      litellm:
+        condition: service_started
+    init: true
+    restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - backend
-    restart: unless-stopped
+    cap_drop: [ALL]
+    networks: [agent]
 
   litellm:
     image: ghcr.io/berriai/litellm:v1.63.14-stable
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      UPSTREAM_API_BASE: ${UPSTREAM_API_BASE:?Set UPSTREAM_API_BASE in .env}
+      UPSTREAM_API_KEY: ${UPSTREAM_API_KEY:?Set UPSTREAM_API_KEY in .env}
+      UPSTREAM_MODEL: ${UPSTREAM_MODEL:?Set UPSTREAM_MODEL in .env}
     volumes:
       - ./llm-proxy/config.yaml:/app/config.yaml:ro
-    expose:
-      - "4000"
-    depends_on:
-      - ollama
-    read_only: true
-    tmpfs:
-      - /tmp:size=128m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - backend
+    expose: ["4000"]
     restart: unless-stopped
-
-  ollama:
-    image: ollama/ollama:0.5.7
-    volumes:
-      - ollama-data:/root/.ollama
-    expose:
-      - "11434"
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - backend
-    restart: unless-stopped
-
-  playwright-mcp:
-    image: mcr.microsoft.com/playwright:v1.49.1-jammy
-    working_dir: /app
-    entrypoint: ["npx", "--yes", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "8931"]
-    expose:
-      - "8931"
-    init: true
-    shm_size: 1gb
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - backend
-    profiles:
-      - browser
-    restart: unless-stopped
-
-  mem0:
-    image: python:3.12-slim
-    working_dir: /app
-    environment:
-      MEM0_STORE_PATH: /data/mem0.db
-    command: >-
-      sh -lc "python -m pip install --no-cache-dir mem0ai fastapi uvicorn &&
-      python - <<'PY'
-      import json, os, sqlite3, uvicorn
-      from fastapi import FastAPI
-      from pydantic import BaseModel
-      app = FastAPI(title='mem0-agent-store')
-      DB = os.environ.get('MEM0_STORE_PATH', '/data/mem0.db')
-      with sqlite3.connect(DB) as db:
-          db.execute('CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT, fact TEXT, metadata TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
-      class Memo(BaseModel):
-          project: str
-          fact: str
-          metadata: dict = {}
-      @app.post('/remember')
-      def remember(item: Memo):
-          with sqlite3.connect(DB) as db:
-              db.execute('INSERT INTO memories(project, fact, metadata) VALUES (?, ?, ?)', (item.project, item.fact[:2000], json.dumps(item.metadata)))
-          return {'status': 'ok'}
-      @app.get('/recall')
-      def recall(project: str, limit: int = 20):
-          with sqlite3.connect(DB) as db:
-              rows = db.execute('SELECT fact, metadata, created_at FROM memories WHERE project = ? ORDER BY id DESC LIMIT ?', (project, limit)).fetchall()
-          return [{'fact': r[0], 'metadata': json.loads(r[1]), 'created_at': r[2]} for r in rows]
-      uvicorn.run(app, host='0.0.0.0', port=8000)
-      PY"
-    volumes:
-      - agent-data:/data
-    expose:
-      - "8000"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - backend
-    restart: unless-stopped
-
-  semgrep:
-    image: returntocorp/semgrep:1.101.0
-    entrypoint: ["sleep", "infinity"]
-    profiles:
-      - scanner-cli
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - backend
-
-volumes:
-  agent-data:
-  ollama-data:
+    cap_drop: [ALL]
+    networks: [agent]
 
 networks:
-  backend:
-    internal: true
+  agent:
+    driver: bridge
+
+volumes:
+  dsh-data:
