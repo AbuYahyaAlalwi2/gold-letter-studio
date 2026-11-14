@@ -1,14 +1,6 @@
-# Copy to .env (do not commit it). The API key remains local to your deployment.
-# Generate strong random values for LITELLM_MASTER_KEY.
 LITELLM_MASTER_KEY=replace-with-long-random-secret
-
-# Your model provider's OpenAI-compatible endpoint, key and provider-prefixed model.
-# Example only: UPSTREAM_MODEL=openai/gpt-4o-mini and UPSTREAM_API_BASE=https://api.openai.com/v1
-UPSTREAM_API_BASE=https://api.x.ai/v1
+UPSTREAM_API_BASE=https://api.groq.com/openai/v1
 UPSTREAM_API_KEY=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
 UPSTREAM_MODEL=groq/grok-2-latest
-
-# Web binding. For a public VPS set these to your HTTPS URL and DNS host,
-# terminate TLS at a reverse proxy, and change the Compose port binding accordingly.
 DSH_PUBLIC_URL=http://localhost:3080/
 DSH_TRUSTED_HOST=localhost
