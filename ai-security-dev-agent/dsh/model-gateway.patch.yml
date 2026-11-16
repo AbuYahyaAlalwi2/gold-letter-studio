@@ -1,0 +1,61 @@
+# Configure the official DSH web profile to use the LiteLLM OpenAI-compatible
+# gateway. Values are read at launch; the API secret stays in the environment.
+- id: llm-pi-ai
+  config:
+    providers:
+      custom-gateway:
+        displayName: Configured API Gateway
+        apiKeyEnv: LITELLM_MASTER_KEY
+        api: openai-completions
+        baseURL: http://litellm:4000/v1
+        models:
+          - id: gateway-model
+            name: Configured gateway model
+            contextWindow: 128000
+            reasoningEfforts:
+              off:
+              low:
+              medium:
+              high:
+
+- id: agent-default-model
+  config:
+    provider: custom-gateway
+    model: gateway-model
+
+- id: mcp-manager
+  config:
+    servers:
+      code-intel:
+        transport: streamable-http
+        url: http://code-intel:8101/mcp
+        headers:
+          Authorization: !!js '`******'
+        startupTimeoutMs: 30000
+        failOnStartupError: true
+      semgrep-scanner:
+        transport: streamable-http
+        url: http://semgrep-scanner:8102/mcp
+        headers:
+          Authorization: !!js '`******'
+        startupTimeoutMs: 30000
+        failOnStartupError: true
+      persistent-memory:
+        transport: streamable-http
+        url: http://persistent-memory:8103/mcp
+        headers:
+          Authorization: !!js '`******'
+        startupTimeoutMs: 30000
+        failOnStartupError: true
+      security-guardrails:
+        transport: streamable-http
+        url: http://security-guardrails:8104/mcp
+        headers:
+          Authorization: !!js '`******'
+        startupTimeoutMs: 30000
+        failOnStartupError: true
+      playwright:
+        transport: streamable-http
+        url: http://playwright-mcp:8931/mcp
+        startupTimeoutMs: 30000
+        failOnStartupError: true

@@ -1,0 +1,1 @@
+"""Cordis plugin package marker."""

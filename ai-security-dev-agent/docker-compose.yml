@@ -1,0 +1,221 @@
+name: ai-security-dev-agent
+
+services:
+  dsh:
+    build:
+      context: ./dsh
+      dockerfile: Dockerfile
+    environment:
+      DSH_HOME: /data/dsh
+      DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://localhost:3000/}
+      DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-localhost}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in an external env file}
+      PLUGIN_SERVICE_TOKEN: ${PLUGIN_SERVICE_TOKEN:?Set PLUGIN_SERVICE_TOKEN in an external env file}
+    ports:
+      - "3000:3000"
+    volumes:
+      - dsh-data:/data
+      - ./workspace:/workspace:rw
+    depends_on:
+      litellm:
+        condition: service_started
+      code-intel:
+        condition: service_healthy
+      semgrep-scanner:
+        condition: service_healthy
+      persistent-memory:
+        condition: service_healthy
+      security-guardrails:
+        condition: service_healthy
+      playwright-mcp:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    networks: [agent]
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.63.14-stable
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in an external env file}
+      UPSTREAM_API_BASE: ${UPSTREAM_API_BASE:?Set UPSTREAM_API_BASE in an external env file}
+      UPSTREAM_API_KEY: ${UPSTREAM_API_KEY:?Set UPSTREAM_API_KEY in an external env file}
+      UPSTREAM_MODEL: ${UPSTREAM_MODEL:?Set UPSTREAM_MODEL in an external env file}
+      FALLBACK_API_BASE: ${FALLBACK_API_BASE:?Set FALLBACK_API_BASE in an external env file}
+      FALLBACK_API_KEY: ${FALLBACK_API_KEY:?Set FALLBACK_API_KEY in an external env file}
+      FALLBACK_MODEL: ${FALLBACK_MODEL:?Set FALLBACK_MODEL in an external env file}
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    expose: ["4000"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 128
+    networks: [agent]
+
+  code-intel:
+    build:
+      context: .
+      dockerfile: plugins/Dockerfile
+      target: code-intel
+    environment:
+      PLUGIN_SERVICE_TOKEN: ${PLUGIN_SERVICE_TOKEN:?Set PLUGIN_SERVICE_TOKEN in an external env file}
+      PROJECT_ROOT: /workspace
+      MCP_PORT: "8101"
+    volumes:
+      - ./workspace:/workspace:rw
+    expose: ["8101"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [agent]
+
+  semgrep-scanner:
+    build:
+      context: .
+      dockerfile: plugins/Dockerfile
+      target: semgrep-scanner
+    environment:
+      PLUGIN_SERVICE_TOKEN: ${PLUGIN_SERVICE_TOKEN:?Set PLUGIN_SERVICE_TOKEN in an external env file}
+      PROJECT_ROOT: /workspace
+      MCP_PORT: "8102"
+      SEMGREP_TIMEOUT_SECONDS: "120"
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/cache
+    volumes:
+      - ./workspace:/workspace:ro
+    expose: ["8102"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    mem_limit: 768m
+    cpus: 0.75
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [agent]
+
+  persistent-memory:
+    build:
+      context: .
+      dockerfile: plugins/Dockerfile
+      target: persistent-memory
+    environment:
+      PLUGIN_SERVICE_TOKEN: ${PLUGIN_SERVICE_TOKEN:?Set PLUGIN_SERVICE_TOKEN in an external env file}
+      MEMORY_DB_PATH: /data/memory/mem0.sqlite3
+      MEM0_API_KEY: ${MEM0_API_KEY:-}
+      MCP_PORT: "8103"
+    volumes:
+      - memory-data:/data/memory
+    expose: ["8103"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8103/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [agent]
+
+  security-guardrails:
+    build:
+      context: .
+      dockerfile: plugins/Dockerfile
+      target: security-guardrails
+    environment:
+      PLUGIN_SERVICE_TOKEN: ${PLUGIN_SERVICE_TOKEN:?Set PLUGIN_SERVICE_TOKEN in an external env file}
+      PROJECT_ROOT: /workspace
+      MCP_PORT: "8104"
+    volumes:
+      - ./workspace:/workspace:ro
+    expose: ["8104"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8104/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [agent]
+
+  playwright-mcp:
+    build:
+      context: ./browser
+      dockerfile: Dockerfile
+    expose: ["8931"]
+    restart: unless-stopped
+    init: true
+    shm_size: 1gb
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8931, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [agent]
+
+networks:
+  agent:
+    driver: bridge
+
+volumes:
+  dsh-data:
+  memory-data:
